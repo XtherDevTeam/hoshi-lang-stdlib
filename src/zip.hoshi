@@ -1,0 +1,150 @@
+use str "str"
+use runtime "runtime"
+use lang "builtin"
+
+import zip_open(path: ptr, compression_level: int32, mode: char) : unsigned from "builtin"
+import zip_close(zip_file: unsigned) : none from "builtin"
+
+import zip_entries_delete(zip_file: unsigned, entry_names: ptr, n: unsigned) : int32 from "builtin"
+import zip_entries_deletebyindex(zip_file: unsigned, entry_indexes: unsigned, n: unsigned) : int32 from "builtin"
+import zip_strerror(error: int32) : ptr from "builtin"
+
+import zip_entries_total(zip_file: unsigned) : int32 from "builtin"
+
+import zip_entry_openbyindex(zip_file: unsigned, index: int32) : unsigned from "builtin"
+import zip_entry_open(zip_file: unsigned, entryname: ptr) : int32 from "builtin"
+import zip_entry_close(zip_file: unsigned) : int32 from "builtin"
+import zip_entry_index(zip_file: unsigned) : int from "builtin"
+
+import zip_entry_name(zip_file: unsigned) : ptr from "builtin"
+import zip_entry_size(zip_file: unsigned) : int32 from "builtin"
+import zip_entry_isdir(zip_file: unsigned) : bool from "builtin"
+import zip_entry_crc32(zip_file: unsigned) : int32 from "builtin"
+
+import zip_entry_noallocread(zip_file: unsigned, buf: ptr, bufsize: unsigned) : int from "builtin"
+import zip_entry_noallocreadwithoffset(zip_file: unsigned, offset: int, bufsize: unsigned, buf: ptr) : int from "builtin"
+import zip_entry_write(zip_file: unsigned, buf: ptr, nbytes: unsigned) : int32 from "builtin"
+
+struct ZipFileEntry {
+    zip_fp: unsigned,
+    name: str.Str,
+    size: int,
+    is_directory: bool,
+    crc32: unsigned,
+    entry_index: int,
+    constructor(zip_fp: unsigned),
+    finalizer(),
+    next() : bool,
+    read(buf: char[]) : lang.Result<int, str.Str>,
+    write(buf: char[]) : lang.Result<int, str.Str>
+}
+
+impl ZipFileEntry {
+    constructor(zip_fp: unsigned) {
+        this.zip_fp = zip_fp
+        this.name = str.Str.from_c_str(zip_entry_name(zip_fp))
+        this.size = zip_entry_size(zip_fp)
+        this.is_directory = zip_entry_isdir(zip_fp)
+        this.crc32 = zip_entry_crc32(zip_fp)
+        this.entry_index = zip_entry_index(zip_fp)
+    },
+    finalizer() {
+        if (this.zip_fp != 0) {
+            zip_entry_close(this.zip_fp)
+            this.zip_fp = 0
+        }
+    },
+    read(buf: char[]) : lang.Result<int, str.Str> {
+        let nbytes = zip_entry_noallocread(this.zip_fp, runtime.runtime_get_string_array_data_pointer(buf), buf.length)
+        if (nbytes < 0) {
+            return lang.Result<int, str.Str>.err(str.Str.from_c_str(zip_strerror(nbytes)))
+        }
+        return lang.Result<int, str.Str>.ok(nbytes)
+    },
+    write(buf: char[]) : lang.Result<int, str.Str> {
+        let nbytes = zip_entry_write(this.zip_fp, runtime.runtime_get_string_array_data_pointer(buf), buf.length)
+        if (nbytes < 0) {
+            return lang.Result<int, str.Str>.err(str.Str.from_c_str(zip_strerror(nbytes)))
+        }
+        return lang.Result<int, str.Str>.ok(nbytes)
+    },
+    next() : bool {
+        let res : bool = zip_entry_openbyindex(this.zip_fp, this.entry_index + 1) != 0
+        if (res) {
+            this.name = str.Str.from_c_str(zip_entry_name(this.zip_fp))
+            this.size = zip_entry_size(this.zip_fp)
+            this.is_directory = zip_entry_isdir(this.zip_fp)
+            this.crc32 = zip_entry_crc32(this.zip_fp)
+            this.entry_index = zip_entry_index(this.zip_fp)
+        }
+        return res
+    }
+}
+
+struct ZipFile {
+    zip_fp: unsigned,
+    entry_singleton: ZipFileEntry,
+    constructor(zip_fp: unsigned),
+    finalizer(),
+    entries() : lang.Result<ZipFileEntry, str.Str>,
+    total() : int,
+    delete(entry_index: int) : int,
+    delete(entry_name: str.Str) : int,
+    open(entry_name: str.Str) : lang.Result<ZipFileEntry, str.Str>,
+    open(entry_index: int) : lang.Result<ZipFileEntry, str.Str>
+}
+
+impl ZipFile {
+    constructor(zip_fp: unsigned) {
+        this.zip_fp = zip_fp
+        if (zip_entries_total(this.zip_fp) != 0) {
+            this.entry_singleton = ZipFileEntry(zip_entry_openbyindex(this.zip_fp, 0))
+        }
+    },
+    finalizer() {
+        if (this.zip_fp != 0) {
+            zip_close(this.zip_fp)
+            this.zip_fp = 0
+        }
+    },
+    entries() : lang.Result<ZipFileEntry, str.Str> {
+        if (this.total() == 0) {
+            return lang.Result<ZipFileEntry, str.Str>.err(str.Str("No entries in zip file"))
+        }
+        return lang.Result<ZipFileEntry, str.Str>.ok(this.entry_singleton)
+    },
+    total() : int {
+        return zip_entries_total(this.zip_fp)
+    },
+    delete(entry_index: int) : int {
+        let entry_indexes = unsigned[1](entry_index)
+        return zip_entries_deletebyindex(this.zip_fp, runtime.runtime_get_string_array_data_pointer(entry_indexes), 1)
+    },
+    delete(entry_name: str.Str) : int {
+        let entry_names = unsigned[1](entry_name.c_str())
+        return zip_entries_delete(this.zip_fp, runtime.runtime_get_string_array_data_pointer(entry_names), 1)
+    },
+    open(entry_name: str.Str) : lang.Result<ZipFileEntry, str.Str> {
+        let entry_index = zip_entry_open(this.zip_fp, entry_name.c_str())
+
+        if (entry_index < 0) {
+            return lang.Result<ZipFileEntry, str.Str>.err(str.Str.from_c_str(zip_strerror(entry_index)))
+        }
+        return lang.Result<ZipFileEntry, str.Str>.ok(ZipFileEntry(zip_entry_openbyindex(this.zip_fp, entry_index)))
+    },
+    open(entry_index: int) : lang.Result<ZipFileEntry, str.Str> {
+        let entry_fp = zip_entry_openbyindex(this.zip_fp, entry_index)
+        if (entry_fp == 0) {
+            return lang.Result<ZipFileEntry, str.Str>.err(str.Str("Failed to open entry"))
+        }
+        return lang.Result<ZipFileEntry, str.Str>.ok(ZipFileEntry(entry_fp))
+    }
+}
+
+func open(path: str.Str, compression_level: int, mode: char) : lang.Result<ZipFile, str.Str> {
+    let zip_fp = zip_open(path.c_str(), compression_level, mode)
+    if (zip_fp == 0) {
+        return lang.Result<ZipFile, str.Str>.err(str.Str("Failed to open zip file"))
+    }
+    return lang.Result<ZipFile, str.Str>.ok(ZipFile(zip_fp))
+}
