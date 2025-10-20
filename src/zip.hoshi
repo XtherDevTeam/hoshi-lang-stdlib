@@ -36,7 +36,8 @@ struct ZipFileEntry {
     finalizer(),
     next() : bool,
     read(buf: char[]) : lang.Result<int, str.Str>,
-    write(buf: char[]) : lang.Result<int, str.Str>
+    write(buf: char[]) : lang.Result<int, str.Str>,
+    close() : none
 }
 
 impl ZipFileEntry {
@@ -49,6 +50,12 @@ impl ZipFileEntry {
         this.entry_index = zip_entry_index(zip_fp)
     },
     finalizer() {
+        if (this.zip_fp != 0) {
+            zip_entry_close(this.zip_fp)
+            this.zip_fp = 0
+        }
+    },
+    close() : none {
         if (this.zip_fp != 0) {
             zip_entry_close(this.zip_fp)
             this.zip_fp = 0
@@ -91,7 +98,8 @@ struct ZipFile {
     delete(entry_index: int) : int,
     delete(entry_name: str.Str) : int,
     open(entry_name: str.Str) : lang.Result<ZipFileEntry, str.Str>,
-    open(entry_index: int) : lang.Result<ZipFileEntry, str.Str>
+    open(entry_index: int) : lang.Result<ZipFileEntry, str.Str>,
+    close() : none
 }
 
 impl ZipFile {
@@ -106,6 +114,12 @@ impl ZipFile {
             zip_close(this.zip_fp)
             this.zip_fp = 0
         }
+    },
+    close() : none {
+        if (this.zip_fp != 0) {
+            zip_close(this.zip_fp)
+        }
+        this.zip_fp = 0
     },
     entries() : lang.Result<ZipFileEntry, str.Str> {
         if (this.total() == 0) {
@@ -125,12 +139,13 @@ impl ZipFile {
         return zip_entries_delete(this.zip_fp, runtime.runtime_get_string_array_data_pointer(entry_names), 1)
     },
     open(entry_name: str.Str) : lang.Result<ZipFileEntry, str.Str> {
-        let entry_index = zip_entry_open(this.zip_fp, entry_name.c_str())
+        let err = zip_entry_open(this.zip_fp, entry_name.c_str())
 
-        if (entry_index < 0) {
-            return lang.Result<ZipFileEntry, str.Str>.err(str.Str.from_c_str(zip_strerror(entry_index)))
+        if (err < 0) {
+            return lang.Result<ZipFileEntry, str.Str>.err(str.Str.from_c_str(zip_strerror(err)))
         }
-        return lang.Result<ZipFileEntry, str.Str>.ok(ZipFileEntry(zip_entry_openbyindex(this.zip_fp, entry_index)))
+        this.entry_singleton = ZipFileEntry(this.zip_fp)
+        return lang.Result<ZipFileEntry, str.Str>.ok(this.entry_singleton)
     },
     open(entry_index: int) : lang.Result<ZipFileEntry, str.Str> {
         let entry_fp = zip_entry_openbyindex(this.zip_fp, entry_index)

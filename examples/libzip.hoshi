@@ -1,0 +1,18 @@
+use str "str"
+use runtime "runtime"
+use console "console"
+use zip "zip"
+
+func main() : int {
+    let pth : str.Str = "test.zip"
+    let zipFile = zip.open(pth, 6, 'w').unwrap()
+    console.print("Created zip file at ", pth)
+    let entry = zipFile.open("hello.txt").unwrap()
+    console.print("Ready to write to hello.txt")
+    entry.write(str.Str("Hello, Zip Files!").data)
+    console.print("Wrote to hello.txt")
+    entry.close().unwrap()
+    zipFile.close()
+    console.print("Closed zip file")
+    return 0
+}
