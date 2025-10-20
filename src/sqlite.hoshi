@@ -1,0 +1,41 @@
+use lang "builtin"
+
+struct SqlExecutionResult {
+    constructor()
+}
+
+impl SqlExecutionResult {
+    constructor() {
+    }
+}
+
+interface SQLBindable {
+    bind(stmt: unsigned, index: int) : none
+}
+
+struct Database {
+    handle: unsigned,
+    begin() : lang.Result<bool, str.Str>,
+    commit() : lang.Result<bool, str.Str>,
+    rollback() : lang.Result<bool, str.Str>,
+    execute(sql: str.Str) : lang.Result<SqlExecutionResult, str.Str>,
+    execute_batch(sql: str.Str) : lang.Result<bool, str.Str>,
+    constructor(handle: unsigned),
+    finalizer()
+}
+
+impl Database {
+    constructor(handle: unsigned) {
+        this.handle = handle
+    },
+    finalizer() {
+        if (this.handle != 0) {
+            // TODO
+        }
+    }
+}
+
+func open(uri: str.Str) : lang.Result<Database, str.Str> {
+    // TODO
+    return lang.Result<Database, str.Str>.err("not implemented yet")
+}
