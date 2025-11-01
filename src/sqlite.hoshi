@@ -1,25 +1,209 @@
 use lang "builtin"
+use io "io"
+use hashMap "hashMap"
+use str "str"
+use vec "vec"
+use runtime "runtime"
 
-struct SqlExecutionResult {
-    constructor()
+import sqlite3_open(filename: ptr, ppDb: ptr) : int32 from "builtin"
+import sqlite3_close(db: unsigned) : int32 from "builtin"
+import sqlite3_exec(db: unsigned, sql: ptr, callback: ptr, arg: ptr, errmsg: ptr) : int32 from "builtin"
+import sqlite3_free(ptr: ptr) : none from "builtin"
+import sqlite3_errmsg(db: unsigned) : ptr from "builtin"
+
+import sqlite3_prepare_v2(db: unsigned, zSql: ptr, nByte: int32, ppStmt: ptr, pzTail: ptr) : int32 from "builtin"
+import sqlite3_step(stmt: unsigned) : int32 from "builtin"
+import sqlite3_finalize(stmt: unsigned) : int32 from "builtin"
+
+import sqlite3_bind_int(stmt: unsigned, index: int32, value: int32) : int32 from "builtin"
+import sqlite3_bind_double(stmt: unsigned, index: int32, value: deci) : int32 from "builtin"
+import sqlite3_bind_text(stmt: unsigned, index: int32, text: ptr, n: int32, destructor: unsigned) : int32 from "builtin"
+import sqlite3_bind_blob(stmt: unsigned, index: int32, blob: ptr, n: int32, destructor: unsigned) : int32 from "builtin"
+
+import sqlite3_column_count(stmt: unsigned) : int32 from "builtin"
+import sqlite3_column_name(stmt: unsigned, N: int32) : ptr from "builtin"
+import sqlite3_column_type(stmt: unsigned, iCol: int32) : int32 from "builtin"
+import sqlite3_column_bytes(stmt: unsigned, iCol: int32) : int32 from "builtin"
+
+import sqlite3_column_int(stmt: unsigned, iCol: int32) : int32 from "builtin"
+import sqlite3_column_double(stmt: unsigned, iCol: int32) : deci from "builtin"
+import sqlite3_column_text(stmt: unsigned, iCol: int32) : ptr from "builtin"
+import sqlite3_column_blob(stmt: unsigned, iCol: int32) : ptr from "builtin"
+
+enum ResultCode {
+    SQLITE_OK = 0,
+    SQLITE_ERROR = 1,
+    SQLITE_INTERNAL = 2,
+    SQLITE_PERM = 3,
+    SQLITE_ABORT = 4,
+    SQLITE_BUSY = 5,
+    SQLITE_LOCKED = 6,
+    SQLITE_NOMEM = 7,
+    SQLITE_READONLY = 8,
+    SQLITE_INTERRUPT = 9,
+    SQLITE_IOERR = 10,
+    SQLITE_CORRUPT = 11,
+    SQLITE_NOTFOUND = 12,
+    SQLITE_FULL = 13,
+    SQLITE_CANTOPEN = 14,
+    SQLITE_PROTOCOL = 15,
+    SQLITE_EMPTY = 16,
+    SQLITE_SCHEMA = 17,
+    SQLITE_TOOBIG = 18,
+    SQLITE_CONSTRAINT = 19,
+    SQLITE_MISMATCH = 20,
+    SQLITE_MISUSE = 21,
+    SQLITE_NOLFS = 22,
+    SQLITE_AUTH = 23,
+    SQLITE_FORMAT = 24,
+    SQLITE_RANGE = 25,
+    SQLITE_NOTADB = 26,
+    SQLITE_NOTICE = 27,
+    SQLITE_WARNING = 28,
+    SQLITE_ROW = 100,
+    SQLITE_DONE = 101
 }
 
-impl SqlExecutionResult {
-    constructor() {
-    }
+enum DataType {
+    INTEGER = 1,
+    FLOAT,
+    TEXT,
+    BLOB,
+    NULL
 }
+
+enum Transient {
+    value = -1
+}
+
+struct SQLNull {
+    constructor() 
+}
+
+impl SQLNull {
+    constructor() {}
+}
+
+interface SQLValue {}
+
+impl int : SQLValue {}
+impl deci : SQLValue {}
+impl io.ArrayBuffer : SQLValue {}
+impl str.Str : SQLValue {}
+impl SQLNull : SQLValue {}
+
+alias SQLRowResult = hashMap.HashMap<str.Str, SQLValue>
 
 interface SQLBindable {
     bind(stmt: unsigned, index: int) : none
 }
 
+impl int : SQLBindable {
+    bind(stmt: unsigned, index: int) : none {
+        sqlite3_bind_int(stmt, index, this)
+    }
+}
+
+impl deci : SQLBindable {
+    bind(stmt: unsigned, index: int) : none {
+        sqlite3_bind_double(stmt, index, this)
+    }
+}
+
+impl io.ArrayBuffer : SQLBindable {
+    bind(stmt: unsigned, index: int) : none {
+        sqlite3_bind_blob(stmt, index, runtime.runtime_get_string_array_data_pointer(this.buf), this.buf.length, Transient.value)
+    }
+}
+
+impl str.Str : SQLBindable {
+    bind(stmt: unsigned, index: int) : none {
+        sqlite3_bind_text(stmt, index, this.c_str(), this.length, Transient.value)
+    }
+}
+
+struct Statement {
+    pDB: unsigned,
+    pStmt: unsigned,
+    fetch() : lang.Result<SQLRowResult, ResultCode>,
+    fetch_all() : lang.Result<vec.Vec<SQLRowResult>, ResultCode>,
+    constructor(pDB: unsigned, pStmt: unsigned),
+    finalizer()
+}
+
+impl Statement {
+    constructor(pDB: unsigned, pStmt: unsigned) {
+        this.pDB = pDB
+        this.pStmt = pStmt
+    },
+    finalizer() {
+        sqlite3_finalize(this.pStmt)
+    },
+    fetch() : lang.Result<SQLRowResult, ResultCode> {
+        let rc = sqlite3_step(this.pStmt)
+        if (rc == ResultCode.SQLITE_ROW) {
+            let row = SQLRowResult()
+            let colCount = sqlite3_column_count(this.pStmt)
+            for (let i = 0;i < colCount;i += 1) {
+                let colName = str.Str.from_c_str(sqlite3_column_name(this.pStmt, i))
+                let colType = sqlite3_column_type(this.pStmt, i)
+                let colValue : SQLValue = null
+                if (colType == DataType.INTEGER) {
+                    colValue = sqlite3_column_int(this.pStmt, i)
+                } elif (colType == DataType.FLOAT) {
+                    colValue = sqlite3_column_double(this.pStmt, i)
+                } elif (colType == DataType.TEXT) {
+                    colValue = str.Str.from_c_str(sqlite3_column_text(this.pStmt, i))
+                } elif (colType == DataType.BLOB) {
+                    // TODO: implement blob support
+                }
+                row[colName] = colValue
+            }
+            return lang.Result<SQLRowResult, ResultCode>.ok(row)
+        } else {
+            return lang.Result<SQLRowResult, ResultCode>.err(rc)
+        }
+    },
+    fetch_all() : lang.Result<vec.Vec<SQLRowResult>, ResultCode> {
+        let rows = vec.Vec<SQLRowResult>()
+        while (true) {
+            let rc = sqlite3_step(this.pStmt)
+            if (rc == ResultCode.SQLITE_ROW) {
+                let row = SQLRowResult()
+                let colCount = sqlite3_column_count(this.pStmt)
+                for (let i = 0;i < colCount;i += 1) {
+                    let colName = str.Str.from_c_str(sqlite3_column_name(this.pStmt, i))
+                    let colType = sqlite3_column_type(this.pStmt, i)
+                    let colValue : SQLValue = null
+                    if (colType == DataType.INTEGER) {
+                        colValue = sqlite3_column_int(this.pStmt, i)
+                    } elif (colType == DataType.FLOAT) {
+                        colValue = sqlite3_column_double(this.pStmt, i)
+                    } elif (colType == DataType.TEXT) {
+                        colValue = str.Str.from_c_str(sqlite3_column_text(this.pStmt, i))
+                    } elif (colType == DataType.BLOB) {
+                        // TODO: implement blob support
+                    }
+                    row[colName] = colValue
+                }
+                rows.push(row)
+            } elif (rc == ResultCode.SQLITE_DONE) {
+                break
+            } else {
+                return lang.Result<vec.Vec<SQLRowResult>, ResultCode>.err(rc)
+            }
+        }
+        return lang.Result<vec.Vec<SQLRowResult>, ResultCode>.ok(rows)
+    }
+}
+
 struct Database {
     handle: unsigned,
-    begin() : lang.Result<bool, str.Str>,
-    commit() : lang.Result<bool, str.Str>,
-    rollback() : lang.Result<bool, str.Str>,
-    execute(sql: str.Str) : lang.Result<SqlExecutionResult, str.Str>,
-    execute_batch(sql: str.Str) : lang.Result<bool, str.Str>,
+    begin() : lang.Result<bool, ResultCode>,
+    commit() : lang.Result<bool, ResultCode>,
+    rollback() : lang.Result<bool, ResultCode>,
+    execute(sql: str.Str, params: ...SQLBindable) : lang.Result<Statement, ResultCode>,
+    execute_batch(sql: str.Str) : lang.Result<bool, ResultCode>,
     constructor(handle: unsigned),
     finalizer()
 }
@@ -30,12 +214,59 @@ impl Database {
     },
     finalizer() {
         if (this.handle != 0) {
-            // TODO
+            sqlite3_close(this.handle)
+            this.handle = 0
         }
+    },
+    begin() : lang.Result<bool, ResultCode> {
+        let rc = sqlite3_exec(this.handle, "BEGIN", 0, 0, 0)
+        if (rc != ResultCode.SQLITE_OK) {
+            return lang.Result<bool, ResultCode>.err(rc)
+        }
+        return lang.Result<bool, ResultCode>.ok(true)
+    },
+    commit() : lang.Result<bool, ResultCode> {
+        let rc = sqlite3_exec(this.handle, "COMMIT", 0, 0, 0)
+        if (rc != ResultCode.SQLITE_OK) {
+            return lang.Result<bool, ResultCode>.err(rc)
+        }
+        return lang.Result<bool, ResultCode>.ok(true)
+    },
+    rollback() : lang.Result<bool, ResultCode> {
+        let rc = sqlite3_exec(this.handle, "ROLLBACK", 0, 0, 0)
+        if (rc != ResultCode.SQLITE_OK) {
+            return lang.Result<bool, ResultCode>.err(rc)
+        }
+        return lang.Result<bool, ResultCode>.ok(true)
+    },
+    execute(sql: str.Str, params: ...SQLBindable) : lang.Result<Statement, ResultCode> {
+        let pStmt = unsigned[1](0)
+        let rc = sqlite3_prepare_v2(this.handle, sql.c_str(), -1, runtime.runtime_get_string_array_data_pointer(pStmt), 0)
+        if (rc != ResultCode.SQLITE_OK) {
+            return lang.Result<Statement, ResultCode>.err(rc)
+        }
+        let stmt = Statement(this.handle, pStmt[0])
+        for (let i = 0;i < params.length;i += 1) {
+            params[i].bind(stmt.pStmt, i + 1)
+        }
+        return lang.Result<Statement, ResultCode>.ok(stmt)
+    },
+    execute_batch(sql: str.Str) : lang.Result<bool, ResultCode> {
+        let rc = sqlite3_exec(this.handle, sql.c_str(), 0, 0, 0)
+        if (rc != ResultCode.SQLITE_OK) {
+            runtime.puts(sqlite3_errmsg(this.handle))
+            return lang.Result<bool, ResultCode>.err(rc)
+        }
+        return lang.Result<bool, ResultCode>.ok(true)
     }
 }
 
-func open(uri: str.Str) : lang.Result<Database, str.Str> {
-    // TODO
-    return lang.Result<Database, str.Str>.err("not implemented yet")
+func open(uri: str.Str) : lang.Result<Database, ResultCode> {
+    let handle = unsigned[1](0)
+    let rc = sqlite3_open(uri.c_str(), runtime.runtime_get_string_array_data_pointer(handle)) // a hack to get a pointer to the memory location of the handle
+    if (rc != ResultCode.SQLITE_OK) {
+        sqlite3_close(handle[0])
+        return lang.Result<Database, ResultCode>.err(rc)
+    }
+    return lang.Result<Database, ResultCode>.ok(Database(handle[0]))
 }

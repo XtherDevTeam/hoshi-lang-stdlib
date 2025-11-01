@@ -2,6 +2,85 @@ use str "str"
 use runtime "runtime"
 use lang "builtin"
 
+/**
+Error codes
+
+ZIP_ENOINIT -1      // not initialized
+ZIP_EINVENTNAME -2  // invalid entry name
+ZIP_ENOENT -3       // entry not found
+ZIP_EINVMODE -4     // invalid zip mode
+ZIP_EINVLVL -5      // invalid compression level
+ZIP_ENOSUP64 -6     // no zip 64 support
+ZIP_EMEMSET -7      // memset error
+ZIP_EWRTENT -8      // cannot write data to entry
+ZIP_ETDEFLINIT -9   // cannot initialize tdefl compressor
+ZIP_EINVIDX -10     // invalid index
+ZIP_ENOHDR -11      // header not found
+ZIP_ETDEFLBUF -12   // cannot flush tdefl buffer
+ZIP_ECRTHDR -13     // cannot create entry header
+ZIP_EWRTHDR -14     // cannot write entry header
+ZIP_EWRTDIR -15     // cannot write to central dir
+ZIP_EOPNFILE -16    // cannot open file
+ZIP_EINVENTTYPE -17 // invalid entry type
+ZIP_EMEMNOALLOC -18 // extracting data using no memory allocation
+ZIP_ENOFILE -19     // file not found
+ZIP_ENOPERM -20     // no permission
+ZIP_EOOMEM -21      // out of memory
+ZIP_EINVZIPNAME -22 // invalid zip archive name
+ZIP_EMKDIR -23      // make dir error
+ZIP_ESYMLINK -24    // symlink error
+ZIP_ECLSZIP -25     // close archive error
+ZIP_ECAPSIZE -26    // capacity size too small
+ZIP_EFSEEK -27      // fseek error
+ZIP_EFREAD -28      // fread error
+ZIP_EFWRITE -29     // fwrite error
+ZIP_ERINIT -30      // cannot initialize reader
+ZIP_EWINIT -31      // cannot initialize writer
+ZIP_EWRINIT -32     // cannot initialize writer from reader
+ZIP_EINVAL -33      // invalid argument
+ZIP_ENORITER -34    // cannot initialize reader iterator
+*/
+enum ErrorCode {
+    ENOINIT = -1,
+    EINVENTNAME = -2,
+    ENOENT = -3,
+    EINVMODE = -4,
+    EINVLVL = -5,
+    ENOSUP64 = -6,
+    EMEMSET = -7,
+    EWRTENT = -8,
+    ETDEFLINIT = -9,
+    EINVIDX = -10,
+    ENOHDR = -11,
+    ETDEFLBUF = -12,
+    ECRTHDR = -13,
+    EWRTHDR = -14,
+    EWRTDIR = -15,
+    EOPNFILE = -16,
+    EINVENTTYPE = -17,
+    EMEMNOALLOC = -18,
+    ENOFILE = -19,
+    ENOPERM = -20,
+    EOOMEM = -21,
+    EINVZIPNAME = -22,
+    EMKDIR = -23,
+    ESYMLINK = -24,
+    ECLSZIP = -25,
+    ECAPSIZE = -26,
+    EFSEEK = -27,
+    EFREAD = -28,
+    EFWRITE = -29,
+    ERINIT = -30,
+    EWINIT = -31,
+    EWRINIT = -32,
+    EINVAL = -33,
+    ENORITER = -34
+}
+
+enum CompressionLevel {
+    Default = 6
+}
+
 import zip_open(path: ptr, compression_level: int32, mode: char) : unsigned from "builtin"
 import zip_close(zip_file: unsigned) : none from "builtin"
 
@@ -156,7 +235,7 @@ impl ZipFile {
     }
 }
 
-func open(path: str.Str, compression_level: int, mode: char) : lang.Result<ZipFile, str.Str> {
+func open(path: str.Str, compression_level: CompressionLevel, mode: char) : lang.Result<ZipFile, str.Str> {
     let zip_fp = zip_open(path.c_str(), compression_level, mode)
     if (zip_fp == 0) {
         return lang.Result<ZipFile, str.Str>.err(str.Str("Failed to open zip file"))

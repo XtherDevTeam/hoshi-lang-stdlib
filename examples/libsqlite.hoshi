@@ -1,0 +1,43 @@
+use str "str"
+use runtime "runtime"
+use console "console"
+use zip "zip"
+use sqlite "sqlite"
+
+func main() : int {
+    console.print("sqlite-validation: start\n")
+    let db = sqlite.open("test.db").unwrap()
+    console.print("sqlite-validation: open db passed\n")
+    let stmt = db.execute_batch(
+        "
+        create table config (
+            serverId            string  default 'YoimiyaGaTaisukidesu!',
+            xmsRootPath         string default './root',
+            xmsBlobPath         string default '$/blob',
+            xmsDrivePath        string default '$/drive',
+            host                string default '0.0.0.0',
+            port                integer default 11453,
+            proxyType           string default 'None',
+            proxyUrl            string default '',
+            allowRegister       integer default 0,
+            enableInviteCode    integer default 0,
+            inviteCode          string default ''
+        );
+        insert into config (serverId) values ('YoimiyaGaTaisukidesu');
+        ").unwrap()
+    console.print("sqlite-validation: create table passed\n")
+    let query = db.execute("select * from config where port = ?", 11453).unwrap()
+    console.print("sqlite-validation: execute query passed\n")
+    let row = query.fetch().unwrap()
+    let keys = row.keys()
+    for (let i = 0; i < keys.length; i += 1) {
+        console.print("sqlite-validation: key: ", keys[i], "\n")
+        if (row[keys[i]] interfaceof int) {
+            console.print("sqlite-validation: value: ", dyn_cast<int>(row[keys[i]]), "\n")
+        } elif (row[keys[i]] interfaceof str.Str) {
+            console.print("sqlite-validation: value: ", dyn_cast<str.Str>(row[keys[i]]), "\n")
+        }
+    }
+    console.print("sqlite-validation: fetch row passed\n")
+    return 0
+}
