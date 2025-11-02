@@ -155,7 +155,11 @@ impl Statement {
                 } elif (colType == DataType.TEXT) {
                     colValue = str.Str.from_c_str(sqlite3_column_text(this.pStmt, i))
                 } elif (colType == DataType.BLOB) {
-                    // TODO: implement blob support
+                    let blobLen = sqlite3_column_bytes(this.pStmt, i)
+                    let data = new char[blobLen]()
+                    let srcPtr = sqlite3_column_blob(this.pStmt, i)
+                    runtime.memcpy(runtime.runtime_get_string_array_data_pointer(data), srcPtr, blobLen)
+                    colValue = io.ArrayBuffer(data)
                 }
                 row[colName] = colValue
             }
@@ -182,7 +186,11 @@ impl Statement {
                     } elif (colType == DataType.TEXT) {
                         colValue = str.Str.from_c_str(sqlite3_column_text(this.pStmt, i))
                     } elif (colType == DataType.BLOB) {
-                        // TODO: implement blob support
+                        let blobLen = sqlite3_column_bytes(this.pStmt, i)
+                        let data = new char[blobLen]()
+                        let srcPtr = sqlite3_column_blob(this.pStmt, i)
+                        runtime.memcpy(runtime.runtime_get_string_array_data_pointer(data), srcPtr, blobLen)
+                        colValue = io.ArrayBuffer(data)
                     }
                     row[colName] = colValue
                 }
@@ -204,6 +212,7 @@ struct Database {
     rollback() : lang.Result<bool, ResultCode>,
     execute(sql: str.Str, params: ...SQLBindable) : lang.Result<Statement, ResultCode>,
     execute_batch(sql: str.Str) : lang.Result<bool, ResultCode>,
+    error_message() : str.Str,
     constructor(handle: unsigned),
     finalizer()
 }
@@ -258,6 +267,9 @@ impl Database {
             return lang.Result<bool, ResultCode>.err(rc)
         }
         return lang.Result<bool, ResultCode>.ok(true)
+    },
+    error_message() : str.Str {
+        return str.Str.from_c_str(sqlite3_errmsg(this.handle))
     }
 }
 
