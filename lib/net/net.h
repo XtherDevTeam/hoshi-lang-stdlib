@@ -19,8 +19,6 @@
 #include <openssl/err.h>
 #include <openssl/rand.h>
 #include <openssl/ssl.h>
-#include <set>
-#include <string>
 #include <unistd.h>
 
 #ifdef _WIN32
@@ -74,17 +72,6 @@ struct sslInfo {
     SSL_CTX *ctx{};
     int fd{};
 };
-
-struct socketStartup {
-    std::shared_ptr<std::set<int>> fdSet;
-    std::shared_ptr<std::set<sslInfo *>> sslConnectionSet;
-
-    socketStartup();
-
-    ~socketStartup();
-};
-
-extern socketStartup socketStartupInstance;
 
 // Parse the given domain name and return the resolved IP address as a string
 // pointer shall be finalized by the caller

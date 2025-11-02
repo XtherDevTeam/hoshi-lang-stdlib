@@ -22,4 +22,8 @@ if (CMAKE_HOST_SYSTEM_NAME MATCHES "Windows")
 
     set(CMAKE_CXX_FLAGS "-static")
     target_link_libraries(std wsock32 ws2_32)
+else()
+    file(GLOB FUCK_OPENSSL "${OPENSSL_INCLUDE_DIR}/../lib/*.a")
+    file(COPY ${FUCK_OPENSSL} DESTINATION ${CMAKE_CURRENT_BINARY_DIR} FOLLOW_SYMLINK_CHAIN)
+    set(CMAKE_CXX_FLAGS "-static -ldl")
 endif()

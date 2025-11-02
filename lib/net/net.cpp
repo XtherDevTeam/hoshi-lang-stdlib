@@ -1,26 +1,5 @@
-#include "net.hpp"
+#include "net.h"
 
-socketStartup::socketStartup() {
-    fdSet = std::make_shared<std::set<int>>();
-    sslConnectionSet = std::make_shared<std::set<sslInfo *>>();
-    SSL_library_init();
-    OpenSSL_add_all_algorithms();
-    SSL_load_error_strings();
-}
-
-socketStartup::~socketStartup() {
-    for (auto &i : *sslConnectionSet) {
-        SSL_CTX_free(i->ctx);
-        SSL_shutdown(i->ssl);
-        SSL_free(i->ssl);
-        delete i;
-    }
-    for (auto &i : *fdSet)
-        close_socket(i);
-    fdSet->clear();
-}
-
-socketStartup socketStartupInstance;
 
 LIBNET_EXPORT const char *libnet_resolve(const char *domain_name) {
     // Set up hints for the getaddrinfo function
@@ -33,7 +12,7 @@ LIBNET_EXPORT const char *libnet_resolve(const char *domain_name) {
     addrinfo *addr_list;
     int error = getaddrinfo(domain_name, "80", &hints, &addr_list);
     if (error != 0) {
-        throw std::runtime_error(std::string{"Failed to resolve domain name: "} + gai_strerror(error));
+        return nullptr;
     }
 
     // Convert the resolved IP address to a string
@@ -51,7 +30,6 @@ LIBNET_EXPORT int libnet_socket(int64_t *result) {
     if (int rc = ::socket(AF_INET, SOCK_STREAM, 0); rc < 0) {
         return rc;
     } else {
-        socketStartupInstance.fdSet->insert(rc);
         *result = rc;
         return 0;
     }
@@ -85,7 +63,6 @@ LIBNET_EXPORT int libnet_socket_bind(int fd, const char *ipAddr, uint16_t port) 
 
 LIBNET_EXPORT int libnet_socket_accept(int fd, sockaddr_in *clientAddr, socklen_t *clientAddrLen) {
     if (auto nfd = accept(fd, (struct sockaddr *)clientAddr, clientAddrLen); nfd > 0) {
-        socketStartupInstance.fdSet->insert(nfd);
         return nfd;
     } else {
         return LIBNET_ACCEPT_FAIL;
@@ -111,21 +88,18 @@ LIBNET_EXPORT int libnet_socket_recv(int fd, char *buf, u_int64_t len, int recvF
 
 LIBNET_EXPORT void libnet_socket_close(int fd) {
     close_socket(fd);
-    socketStartupInstance.fdSet->erase(fd);
 }
 
 LIBNET_EXPORT sslInfo *libnet_ssl_connect(int fd) {
-    auto *r = new sslInfo();
+    auto r = (sslInfo *)malloc(sizeof(sslInfo));
     if ((r->ctx = SSL_CTX_new(TLS_method())) == nullptr)
-        throw std::runtime_error("libnet: error creating ssl context");
+        return nullptr;
     r->ssl = SSL_new(r->ctx);
     SSL_set_fd(r->ssl, fd);
     if (auto retCode = SSL_connect(r->ssl); retCode != 1) {
-        throw std::runtime_error("libnet: error making ssl connection: ErrorCode: " +
-                                 std::to_string(SSL_get_error(r->ssl, retCode)));
+        return nullptr;
     }
     r->fd = fd;
-    socketStartupInstance.sslConnectionSet->insert(r);
     return r;
 }
 
@@ -151,6 +125,12 @@ LIBNET_EXPORT void libnet_ssl_close(sslInfo *fd) {
     SSL_shutdown(fd->ssl);
     SSL_free(fd->ssl);
     close_socket(fd->fd);
-    socketStartupInstance.fdSet->erase(fd->fd);
-    socketStartupInstance.sslConnectionSet->erase(fd);
+}
+
+LIBNET_EXPORT int libnet_socket_listen(int fd, int backlog) {
+    if (int rc = ::listen(fd, backlog); rc < 0) {
+        return rc;
+    } else {
+        return 0;
+    }
 }

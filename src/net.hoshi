@@ -1,0 +1,229 @@
+use lang "builtin"
+use io "io"
+use hashMap "hashMap"
+use str "str"
+use vec "vec"
+use runtime "runtime"
+
+enum ResultCode {
+    SUCCESS = 0,
+    INET_ATON_FAIL = -1,
+    CONN_FAIL = -2,
+    LISTEN_FAIL = -3,
+    ACCEPT_FAIL = -4,
+    SEND_FAIL = -5,
+    RECV_FAIL = -6,
+    SSL_CONNECT_FAIL = -7,
+    SSL_SEND_FAIL = -8,
+    SSL_RECV_FAIL = -9,
+    NAME_RESOLVE_FAIL = -10,
+}
+
+/* resolve domain name into IP address, the allocated memory should be freed by the caller */
+import libnet_resolve(domain_name: ptr) : ptr from "builtin"
+
+/* socket operations*/
+import libnet_socket(result: ptr) : int32 from "builtin"
+import libnet_socket_connect(fd: int32, ipAddr: ptr, port: short) : int32 from "builtin"
+import libnet_socket_bind(fd: int32, ipAddr: ptr, port: short) : int32 from "builtin"
+import libnet_socket_listen(fd: int32, backlog: int32) : int32 from "builtin"
+import libnet_socket_accept(fd: int32, clientAddr: ptr, clientAddrLen: ptr) : int32 from "builtin"
+import libnet_socket_send(fd: int32, buf: ptr, len: unsigned, sendFlag: int32) : int32 from "builtin"
+import libnet_socket_recv(fd: int32, buf: ptr, len: unsigned, recvFlag: int32) : int32 from "builtin"
+import libnet_socket_close(fd: int32) : none from "builtin"
+
+/* SSL operations */
+import libnet_ssl_connect(fd: int32) : unsigned from "builtin"
+import libnet_ssl_send(fd: unsigned, data: ptr, len: unsigned) : int32 from "builtin"
+import libnet_ssl_recv(fd: unsigned, dest: ptr, len: unsigned) : int32 from "builtin"
+import libnet_ssl_close(fd: unsigned) : none from "builtin"
+
+struct Socket {
+    fd: unsigned,
+    send_flag: int,
+    recv_flag: int,
+    constructor(),
+    constructor(fd: unsigned, send_flag: int, recv_flag: int),
+    finalizer(),
+    connect(addr: str.Str, port: short) : ResultCode,
+    bind(addr: str.Str, port: short) : ResultCode,
+    listen(backlog: int) : ResultCode,
+    accept() : lang.Result<Socket, ResultCode>,
+    send(data: char[], length: unsigned) : lang.Result<int, ResultCode>,
+    send(data: char[]) : lang.Result<int, ResultCode>,
+    recv(length: unsigned) : lang.Result<io.ArrayBuffer, ResultCode>,
+    close() : none
+}
+
+impl Socket {
+    constructor() {
+        this.fd = 0
+        this.send_flag = 0
+        this.recv_flag = 0
+    },
+    constructor(fd: unsigned, send_flag: int, recv_flag: int) {
+        this.fd = fd
+        this.send_flag = send_flag
+        this.recv_flag = recv_flag
+    },
+    finalizer() {
+        if (this.fd > 0) {
+            libnet_socket_close(this.fd)
+            this.fd = 0
+        }
+    },
+    connect(addr: str.Str, port: short) : ResultCode {
+        return libnet_socket_connect(this.fd, runtime.runtime_get_string_array_data_pointer(addr.data), port)
+    },
+    bind(addr: str.Str, port: short) : ResultCode {
+        return libnet_socket_bind(this.fd, addr.data, port)
+    },
+    listen(backlog: int) : ResultCode {
+        return libnet_socket_listen(this.fd, backlog)
+    },
+    accept() : lang.Result<Socket, ResultCode> {
+        let clientAddrLen = new short[1](0)
+        let clientAddr = new char[16](0)
+        let rc = libnet_socket_accept(this.fd, 0, 0)
+        if (rc < 0) {
+            return lang.Result<Socket, ResultCode>.err(rc)
+        } else {
+            return lang.Result<Socket, ResultCode>.ok(Socket(rc, this.send_flag, this.recv_flag))
+        }
+    },
+    send(data: char[], length: unsigned) : lang.Result<int, ResultCode> {
+        let rc = libnet_socket_send(this.fd, runtime.runtime_get_string_array_data_pointer(data), length, this.send_flag)
+        if (rc < 0) {
+            return lang.Result<int, ResultCode>.err(rc)
+        } else {
+            return lang.Result<int, ResultCode>.ok(rc)
+        }
+    },
+    send(data: char[]) : lang.Result<int, ResultCode> {
+        let rc = libnet_socket_send(this.fd, runtime.runtime_get_string_array_data_pointer(data), data.length, this.send_flag)
+        if (rc < 0) {
+            return lang.Result<int, ResultCode>.err(rc)
+        } else {
+            return lang.Result<int, ResultCode>.ok(rc)
+        }
+    },
+    recv(length: unsigned) : lang.Result<io.ArrayBuffer, ResultCode> {
+        let buf = new char[length](0)
+        let rc = libnet_socket_recv(this.fd, runtime.runtime_get_string_array_data_pointer(buf), length, this.recv_flag)
+        if (rc < 0) {
+            return lang.Result<io.ArrayBuffer, ResultCode>.err(rc)
+        } else {
+            let composedBuf = io.ArrayBuffer(buf)
+            composedBuf.size = rc
+            return lang.Result<io.ArrayBuffer, ResultCode>.ok(composedBuf)
+        }
+    },
+    close() : none {
+        if (this.fd != 0) {
+            libnet_socket_close(this.fd)
+            this.fd = 0
+        }
+    }
+}
+
+func socket() : lang.Result<Socket, ResultCode> {
+    let fd = unsigned[1](0)
+    let rc = libnet_socket(runtime.runtime_get_string_array_data_pointer(fd))
+    if (rc != 0) {
+        return lang.Result<Socket, ResultCode>.err(rc)
+    } else {
+        return lang.Result<Socket, ResultCode>.ok(Socket(fd[0], 0, 0))
+    }
+}
+
+struct SSLSocket {
+    ssl_fd: unsigned,
+    send_flag: int,
+    recv_flag: int,
+    constructor(),
+    constructor(ssl_fd: unsigned, send_flag: int, recv_flag: int),
+    finalizer(),
+    connect(addr: str.Str, port: short) : ResultCode,
+    recv(length: unsigned) : lang.Result<io.ArrayBuffer, ResultCode>,
+    send(data: char[], length: unsigned) : lang.Result<int, ResultCode>,
+    send(data: char[]) : lang.Result<int, ResultCode>,
+    close() : none
+}
+
+impl SSLSocket {
+    constructor() {
+        this.ssl_fd = 0
+        this.send_flag = 0
+        this.recv_flag = 0
+    },
+    constructor(ssl_fd: unsigned, send_flag: int, recv_flag: int) {
+        this.ssl_fd = ssl_fd
+        this.send_flag = send_flag
+        this.recv_flag = recv_flag
+    },
+    finalizer() {
+        if (this.ssl_fd > 0) {
+            libnet_ssl_close(this.ssl_fd)
+            this.ssl_fd = 0
+        }
+    },
+    connect(addr: str.Str, port: short) : ResultCode {
+        let rc = libnet_socket_connect(this.ssl_fd, addr.data, port)
+        if (rc != 0) {
+            return rc
+        }
+        return libnet_ssl_connect(this.ssl_fd)
+    },
+    recv(length: unsigned) : lang.Result<io.ArrayBuffer, ResultCode> {
+        let buf = new char[length](0)
+        let rc = libnet_ssl_recv(this.ssl_fd, runtime.runtime_get_string_array_data_pointer(buf), length)
+        if (rc < 0) {
+            return lang.Result<io.ArrayBuffer, ResultCode>.err(rc)
+        } else {
+            let composedBuf = io.ArrayBuffer(buf)
+            composedBuf.size = rc
+            return lang.Result<io.ArrayBuffer, ResultCode>.ok(composedBuf)
+        }
+    },
+    send(data: char[], length: unsigned) : lang.Result<int, ResultCode> {
+        let rc = libnet_ssl_send(this.ssl_fd, runtime.runtime_get_string_array_data_pointer(data), length)
+        if (rc < 0) {
+            return lang.Result<int, ResultCode>.err(rc)
+        } else {
+            return lang.Result<int, ResultCode>.ok(rc)
+        }
+    },
+    send(data: char[]) : lang.Result<int, ResultCode> {
+        let rc = libnet_ssl_send(this.ssl_fd, runtime.runtime_get_string_array_data_pointer(data), data.length)
+        if (rc < 0) {
+            return lang.Result<int, ResultCode>.err(rc)
+        } else {
+            return lang.Result<int, ResultCode>.ok(rc)
+        }
+    },
+    close() : none {
+        if (this.ssl_fd != 0) {
+            libnet_ssl_close(this.ssl_fd)
+            this.ssl_fd = 0
+        }
+    }
+}
+
+func ssl_socket() : lang.Result<SSLSocket, ResultCode> {
+    let ssl_fd = unsigned[1](0)
+    let rc = libnet_socket(runtime.runtime_get_string_array_data_pointer(ssl_fd))
+    if (rc != 0) {
+        return lang.Result<SSLSocket, ResultCode>.err(rc)
+    } else {
+        return lang.Result<SSLSocket, ResultCode>.ok(SSLSocket(ssl_fd[0], 0, 0))
+    }
+}
+
+func resolve_name(domain_name: str.Str) : lang.Result<str.Str, ResultCode> {
+    let res = libnet_resolve(runtime.runtime_get_string_array_data_pointer(domain_name.data))
+    if (res == 0) {
+        return lang.Result<str.Str, ResultCode>.err(ResultCode.NAME_RESOLVE_FAIL)
+    } else {
+        return lang.Result<str.Str, ResultCode>.ok(str.Str.from_c_str(res))
+    }
+}

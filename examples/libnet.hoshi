@@ -1,0 +1,25 @@
+use net "net"
+use str "str"
+use console "console"
+use runtime "runtime"
+
+func main() : int {
+    console.print("libnet-validation: start\n")
+    let socket = net.socket().unwrap()
+    console.print("libnet-validation: socket created\n")
+    if (socket.connect("127.0.0.1", 9002) != 0) {
+        console.print("libnet-validation: connection failed\n")
+        return 1
+    }
+    console.print("libnet-validation: connection succeeded\n")
+    let composedRequest : str.Str = "GET /test HTTP/1.1\r\nHost: 127.0.0.1:9002\r\nConnection: close\r\n\r\n"
+    socket.send(composedRequest.data).unwrap()
+    console.print("libnet-validation: request sent\n")
+    let response = socket.recv(1048576).unwrap()
+    let respStr = str.Str.from_c_str(runtime.runtime_get_string_array_data_pointer(response.buf))
+    console.print("libnet-validation: response received: ", respStr, "\n")
+    socket.close()
+    console.print("libnet-validation: socket closed\n")
+    console.print("libnet-validation: passed\n")
+    return 0
+}
