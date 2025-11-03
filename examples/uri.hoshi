@@ -1,0 +1,43 @@
+use net "net"
+use str "str"
+use console "console"
+use runtime "runtime"
+
+func uri_validation(uri: str.Str) : bool {
+    let URI = net.parseURL(uri)
+    if (URI.is_err()) {
+        console.print(str.format("Invalid URI: {} (reason: {})", uri, URI.unwrap_err() as int))
+        return false
+    }
+    let parsed = URI.unwrap()
+    console.print(str.format("Parsed: {} {} {} {}\n", parsed.protocol, parsed.host, parsed.port as int, parsed.target))
+    let parsed_str = URI.unwrap().to_string()
+    console.print("URI:", parsed_str, "\n")
+    return true
+}
+
+func main() : int {
+    let tests = str.Str[3](
+        "http://yoimiya.is.my.waifu.com",
+        "https://ripples-of-the-past-reverie:83/target",
+        "ftp://192.168.1.1:21/file.txt"
+    )
+    console.print("uri-validation: start\n")
+    let success = true
+    for (let i = 0; i < tests.length; i += 1) {
+        console.print(str.format("Test {}: ", i))
+        if (uri_validation(tests[i])) {
+            console.print("OK\n")
+        } else {
+            console.print("Failed\n")
+            success = false
+        }
+    }
+    if (success) {
+        console.print("uri-validation: success\n")
+        return 0
+    } else {
+        console.print("uri-validation: failed\n")
+        return 1
+    }
+}

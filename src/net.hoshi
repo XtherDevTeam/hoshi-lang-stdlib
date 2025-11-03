@@ -227,3 +227,77 @@ func resolve_name(domain_name: str.Str) : lang.Result<str.Str, ResultCode> {
         return lang.Result<str.Str, ResultCode>.ok(str.Str.from_c_str(res))
     }
 }
+
+struct URL {
+    protocol: str.Str,
+    host: str.Str,
+    port: short,
+    target: str.Str,
+    constructor(protocol: str.Str, host: str.Str, port: short, target: str.Str),
+    to_string() : str.Str
+}
+
+impl URL {
+    constructor(protocol: str.Str, host: str.Str, port: short, target: str.Str) {
+        this.protocol = protocol
+        this.host = host
+        this.port = port
+        this.target = target
+    },
+    to_string() : str.Str {
+        // return this.protocol + "://" + this.host + ":" + str.Stringable(this.port).to_string() + this.target
+        return str.format("{}://{}:{}{}", this.protocol, this.host, this.port as int, this.target)
+    }
+}
+
+impl URL : str.Stringable {
+    to_string() : str.Str {
+        return this.to_string()
+    }
+}
+
+enum URLParseError {
+    NO_PROTOCOL,
+    NO_HOST,
+    INVALID_PORT,
+    NO_TARGET
+}
+
+func parseURL(s: str.Str) : lang.Result<URL, URLParseError> {
+    let protocol_end = s.find("://")
+    if (protocol_end == -1) {
+        return lang.Result<URL, URLParseError>.err(URLParseError.NO_PROTOCOL)
+    }
+    let protocol = s.substring(0, protocol_end)
+    let host_start = protocol_end + 3
+    let host_end = s.find("/", host_start)
+    if (host_end == -1) {
+        host_end = s.length
+    }
+    let host = s.substring(host_start, host_end)
+    // port is optional and in the host
+    let port = 80
+    if (host.find(":") != -1) {
+        let port_start = host.find(":")
+        if (port_start != -1) {
+            port = str.toInt(host.substring(port_start + 1, host.length))
+            if (port == 0 || port > 65535) {
+                return lang.Result<URL, URLParseError>.err(URLParseError.INVALID_PORT)
+            }
+            host = host.substring(0, port_start)
+            if (host.length == 0) {
+                return lang.Result<URL, URLParseError>.err(URLParseError.NO_HOST)
+            }
+        }
+    }
+    // target is everything after the host
+    let target_start = host_end
+    if (target_start == -1) {
+        target_start = s.length
+    }
+    let target : str.Str = "/"
+    if (target_start != s.length) {
+        target = s.substring(target_start, s.length)
+    }
+    return lang.Result<URL, URLParseError>.ok(URL(protocol, host, port, target))
+}
