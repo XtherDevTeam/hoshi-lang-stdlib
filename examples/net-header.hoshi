@@ -1,0 +1,81 @@
+use net "net"
+use str "str"
+use console "console"
+use runtime "runtime"
+
+func request_header_parse_validation(s: str.Str) : bool {
+    let parsed = net.parseHTTPRequestHeader(s)
+    if (parsed.is_err()) {
+        console.print(str.format("Error: {}\n", parsed.unwrap_err() as int))
+        return false
+    }
+    let request = parsed.unwrap()
+    console.print(str.format("Success: \n{}", request))
+    return true
+}
+
+func response_header_parse_validation(s: str.Str) : bool {
+    let parsed = net.parseHTTPResponseHeader(s)
+    if (parsed.is_err()) {
+        console.print(str.format("Error: {}\n", parsed.unwrap_err() as int))
+        return false
+    }
+    let response = parsed.unwrap()
+    console.print(str.format("Success: \n{}", response))
+    return true
+}
+
+func main() : int {
+    let requests_tests = str.Str[2](
+"GET / HTTP/1.1\r
+Host: example.com\r
+\r\n\r
+",
+"POST / HTTP/1.1\r
+Host: example.com\r
+Content-Type: application/json\r
+Content-Length: 10\r
+\r\n\r
+"
+    )
+    let responses_tests = str.Str[2](
+"HTTP/1.1 200 OK\r
+Content-Type: application/json\r
+Content-Length: 10\r
+\r\n\r
+",
+"HTTP/1.1 404 Not Found\r
+Content-Type: text/plain\r
+Content-Length: 13\r
+\r\n\r
+Not Found"
+    )
+    console.print("header-validation: start\n")
+    let success = true
+    for (let i = 0; i < requests_tests.length; i += 1) {
+        console.print(str.format("Test {}: ", i))
+        if (request_header_parse_validation(requests_tests[i])) {
+            console.print("OK\n")
+        } else {
+            console.print("Failed\n")
+            success = false
+        }
+    }
+    for (let i = 0; i < responses_tests.length; i += 1) {
+        console.print(str.format("Test {}: ", i + requests_tests.length))
+        if (response_header_parse_validation(responses_tests[i])) {
+            console.print("OK\n")
+        } else {
+            console.print("Failed\n")
+            success = false
+        }
+    }
+
+    if (success) {
+        console.print("header-validation: success\n")
+        return 0
+    } else {
+        console.print("header-validation: failed\n")
+        return 1
+    }
+}
