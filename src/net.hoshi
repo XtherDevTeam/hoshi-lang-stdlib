@@ -4,6 +4,8 @@ use hashMap "hashMap"
 use str "str"
 use vec "vec"
 use runtime "runtime"
+use math "math"
+use console "console"
 
 enum ResultCode {
     SUCCESS = 0,
@@ -331,7 +333,7 @@ impl HTTPRequestHeader {
         let first_line = str.format("{} {} {}\r\n", this.method, this.target, this.version)
         let headers : str.Str = ""
         for (let i = 0; i < this.headers.size(); i += 1) {
-            headers = headers + str.format("{}: {}\r\n", this.headers.keys()[i], this.headers.values()[i])
+            headers += str.format("{}: {}\r\n", this.headers.keys()[i], this.headers.values()[i])
         }
         return str.format("{}{}{}", first_line, headers, "\r\n")
     }
@@ -348,7 +350,7 @@ impl HTTPResponseHeader {
         let first_line = str.format("{} {} {}\r\n", this.version, this.status_code, this.status_message)
         let headers : str.Str = ""
         for (let i = 0; i < this.headers.size(); i += 1) {
-            headers = headers + str.format("{}: {}\r\n", this.headers.keys()[i], this.headers.values()[i])
+            headers += str.format("{}: {}\r\n", this.headers.keys()[i], this.headers.values()[i])
         }
         return str.format("{}{}{}", first_line, headers, "\r\n")
     }
@@ -455,4 +457,45 @@ func parseHTTPResponseHeader(s: str.Str) : lang.Result<HTTPResponseHeader, HTTPH
         header_start = header_end + 2
     }
     return lang.Result<HTTPResponseHeader, HTTPHeaderParseError>.ok(HTTPResponseHeader(version, status_code, status_message, headers))
+}
+
+func urlencode(s: str.Str) : str.Str {
+    let hexmap : str.Str = "0123456789ABCDEF"
+    let encoded = str.Str(s.length * 2u)
+    for (let i = 0; i < s.length; i += 1) {
+        if ((s[i] >= 'a' && s[i] <= 'z') || (s[i] >= 'A' && s[i] <= 'Z') || (s[i] >= '0' && s[i] <= '9') || s[i] == '-' || s[i] == '_' || s[i] == '.' || s[i] == '~') {
+            encoded.push(s[i])
+        } elif (s[i] == ' ') {
+            encoded.push('%')
+            encoded.push('2')
+            encoded.push('0')
+        } else {
+            encoded.push('%')
+            // console.print(str.format("WTF: {} {} {} {} {}\n", s[i] as int, s[i] as int >> 4, s[i] as int & 0xF, hexmap[s[i] >> 4], hexmap[s[i] & 0xF]))
+            encoded.push(hexmap[s[i] >> 4])
+            encoded.push(hexmap[s[i] & 0xF])
+        }
+    }
+    return encoded
+}
+
+func urldecode(s: str.Str) : str.Str {
+    let decoded = str.Str(s.length)
+    let i = 0
+    for (let i = 0; i < s.length; i += 1) {
+        if (s[i] == '+') {
+            decoded.push(' ')
+        } elif (s[i] == '%') {
+            let hex_start = i + 1
+            let hex_end = i + 2
+            if (hex_end > s.length) {
+                break
+            }
+            decoded.push(math.hextoint(s[hex_start]) << 4 | math.hextoint(s[hex_start + 1]))
+            i = hex_end
+        } else {
+            decoded.push(s[i])
+        }
+    }
+    return decoded
 }
