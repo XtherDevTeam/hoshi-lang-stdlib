@@ -101,4 +101,6 @@ LIBNET_EXPORT int libnet_ssl_recv(sslInfo *fd, char *dest, u_int64_t len);
 
 LIBNET_EXPORT void libnet_ssl_close(sslInfo *fd);
 
+LIBNET_EXPORT void libnet_free(void *ptr);
+
 #endif // HOSHILANGSTD_LIBNET

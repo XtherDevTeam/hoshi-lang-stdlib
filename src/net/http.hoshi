@@ -1,0 +1,347 @@
+use lang "builtin"
+use io "io"
+use hashMap "hashMap"
+use str "str"
+use vec "vec"
+use runtime "runtime"
+use math "math"
+use file "file"
+use socket "socket"
+use uri "uri"
+use console "console"
+
+struct HTTPRequestHeader {
+    method: str.Str,
+    target: str.Str,
+    version: str.Str,
+    headers: hashMap.HashMap<str.Str, str.Str>,
+    constructor(method: str.Str, target: str.Str, version: str.Str, headers: hashMap.HashMap<str.Str, str.Str>),
+    to_string() : str.Str,
+    add_header(key: str.Str, value: str.Str) : HTTPRequestHeader
+}
+
+struct HTTPResponseHeader {
+    version: str.Str,
+    status_code: int,
+    status_message: str.Str,
+    headers: hashMap.HashMap<str.Str, str.Str>,
+    constructor(version: str.Str, status_code: int, status_message: str.Str, headers: hashMap.HashMap<str.Str, str.Str>),
+    to_string() : str.Str,
+    add_header(key: str.Str, value: str.Str) : HTTPResponseHeader
+}
+
+impl HTTPRequestHeader {
+    constructor(method: str.Str, target: str.Str, version: str.Str, headers: hashMap.HashMap<str.Str, str.Str>) {
+        this.method = method
+        this.target = target
+        this.version = version
+        this.headers = headers
+    },
+    to_string() : str.Str {
+        let first_line = str.format("{} {} {}\r\n", this.method, this.target, this.version)
+        let headers : str.Str = ""
+        for (let i = 0; i < this.headers.size(); i += 1) {
+            headers += str.format("{}: {}\r\n", this.headers.keys()[i], this.headers.values()[i])
+        }
+        return str.format("{}{}{}", first_line, headers, "\r\n")
+    },
+    add_header(key: str.Str, value: str.Str) : HTTPRequestHeader {
+        this.headers[key.lowercase()] = value
+        return this
+    }
+}
+
+impl HTTPResponseHeader {
+    constructor(version: str.Str, status_code: int, status_message: str.Str, headers: hashMap.HashMap<str.Str, str.Str>) {
+        this.version = version
+        this.status_code = status_code
+        this.status_message = status_message
+        this.headers = headers
+    },
+    to_string() : str.Str {
+        let first_line = str.format("{} {} {}\r\n", this.version, this.status_code, this.status_message)
+        let headers : str.Str = ""
+        for (let i = 0; i < this.headers.size(); i += 1) {
+            headers += str.format("{}: {}\r\n", this.headers.keys()[i], this.headers.values()[i])
+        }
+        return str.format("{}{}{}", first_line, headers, "\r\n")
+    },
+    add_header(key: str.Str, value: str.Str) : HTTPResponseHeader {
+        this.headers[key.lowercase()] = value
+        return this
+    }
+}
+
+impl HTTPRequestHeader : str.Stringable {
+    to_string() : str.Str {
+        return this.to_string()
+    }
+}
+
+impl HTTPResponseHeader : str.Stringable {
+    to_string() : str.Str {
+        return this.to_string()
+    }
+}
+
+enum HTTPHeaderParseError {
+    NO_FIRST_LINE,
+    INVALID_METHOD,
+    INVALID_TARGET,
+    INVALID_VERSION,
+    INVALID_STATUS_CODE,
+    INVALID_STATUS_MESSAGE
+}
+
+func parseHTTPRequestHeader(s: str.Str) : lang.Result<HTTPRequestHeader, HTTPHeaderParseError> {
+    let first_line_end = s.find("\r\n")
+    if (first_line_end == -1) {
+        return lang.Result<HTTPRequestHeader, HTTPHeaderParseError>.err(HTTPHeaderParseError.NO_FIRST_LINE)
+    }
+    let first_line = s.substring(0, first_line_end)
+    let method_end = first_line.find(" ")
+    if (method_end == -1) {
+        return lang.Result<HTTPRequestHeader, HTTPHeaderParseError>.err(HTTPHeaderParseError.INVALID_METHOD)
+    }
+    let method = first_line.substring(0, method_end)
+    let target_start = method_end + 1
+    let target_end = first_line.find(" ", target_start)
+    if (target_end == -1) {
+        return lang.Result<HTTPRequestHeader, HTTPHeaderParseError>.err(HTTPHeaderParseError.INVALID_TARGET)
+    }
+    let target = first_line.substring(target_start, target_end)
+    let version_start = target_end + 1
+    if (version_start >= first_line.length) {
+        return lang.Result<HTTPRequestHeader, HTTPHeaderParseError>.err(HTTPHeaderParseError.INVALID_VERSION)
+    }
+    let version = first_line.substring(version_start, first_line.length)
+    let headers = hashMap.HashMap<str.Str, str.Str>()
+    let header_start = first_line_end + 2
+    while (header_start < s.length) {
+        let header_end = s.find("\r\n", header_start)
+        if (header_end == -1) {
+            break
+        }
+        let header_line = s.substring(header_start, header_end)
+        let colon_index = header_line.find(":")
+        if (colon_index == -1) {
+            break
+        }
+        let header_name = header_line.substring(0, colon_index).lowercase()
+        let header_value = header_line.substring(colon_index + 1, header_line.length)
+        headers[header_name] = header_value
+        header_start = header_end + 2
+    }
+    return lang.Result<HTTPRequestHeader, HTTPHeaderParseError>.ok(HTTPRequestHeader(method, target, version, headers))
+}
+
+func parseHTTPResponseHeader(s: str.Str) : lang.Result<HTTPResponseHeader, HTTPHeaderParseError> {
+    let first_line_end = s.find("\r\n")
+    let first_line = s.substring(0, first_line_end)
+    let version_start = 0
+    let version_end = first_line.find(" ")
+    if (version_end == -1) {
+        return lang.Result<HTTPResponseHeader, HTTPHeaderParseError>.err(HTTPHeaderParseError.INVALID_VERSION)
+    }
+    let version = first_line.substring(version_start, version_end)
+    let status_code_start = version_end + 1
+    let status_code_end = first_line.find(" ", status_code_start)
+    if (status_code_end == -1) {
+        return lang.Result<HTTPResponseHeader, HTTPHeaderParseError>.err(HTTPHeaderParseError.INVALID_STATUS_CODE)
+    }
+    let status_code = str.toInt(first_line.substring(status_code_start, status_code_end))
+    let status_message_start = status_code_end + 1
+    if (status_message_start >= first_line.length) {
+        return lang.Result<HTTPResponseHeader, HTTPHeaderParseError>.err(HTTPHeaderParseError.INVALID_STATUS_MESSAGE)
+    }
+    let status_message = first_line.substring(status_message_start, first_line.length)
+    let headers = hashMap.HashMap<str.Str, str.Str>()
+    let header_start = first_line_end + 2
+    while (header_start < s.length) {
+        let header_end = s.find("\r\n", header_start)
+        if (header_end == -1) {
+            break
+        }
+        let header_line = s.substring(header_start, header_end)
+        let colon_index = header_line.find(":")
+        if (colon_index == -1) {
+            break
+        }
+        let header_name = header_line.substring(0, colon_index).lowercase()
+        let header_value = header_line.substring(colon_index + 1, header_line.length)
+        headers[header_name] = header_value
+        header_start = header_end + 2
+    }
+    return lang.Result<HTTPResponseHeader, HTTPHeaderParseError>.ok(HTTPResponseHeader(version, status_code, status_message, headers))
+}
+
+interface HTTPRequestBody {
+    contentLength() : int,
+    contentType() : str.Str,
+    writeTo(writer: socket.AbstractSocket) : none
+}
+
+enum HTTPNetworkError {
+    SUCCESS,
+    INVALID_URI,
+    UNKNOWN_PROTOCOL,
+    NAME_NOT_RESOLVED,
+    CONNECTION_REFUSED,
+    CONNECTION_RESET,
+    CONNECTION_TIMEOUT,
+    INVALID_HTTP_RESPONSE,
+    UNKNOWN_ERROR
+}
+
+struct HTTPResponse {
+    resource: uri.URL,
+    header: HTTPResponseHeader,
+    socket: socket.AbstractSocket,
+    cached_recv: io.ArrayBuffer,
+    constructor(resource: uri.URL, header: HTTPResponseHeader, socket: socket.AbstractSocket, cached_recv: io.ArrayBuffer)
+}
+
+struct HTTPRequest {
+    resource: uri.URL,
+    header: HTTPRequestHeader,
+    socket: socket.AbstractSocket,
+    body: HTTPRequestBody,
+    cached_recv: io.ArrayBuffer,
+    constructor(resource: uri.URL, header: HTTPRequestHeader, body: HTTPRequestBody),
+    constructor(resource: uri.URL, header: HTTPRequestHeader),
+    send() : lang.Result<HTTPResponse, HTTPNetworkError>,
+    set_body(body: HTTPRequestBody) : HTTPRequest,
+    set_header(key: str.Str, value: str.Str) : HTTPRequest,
+    recv_header() : lang.Result<HTTPResponseHeader, HTTPNetworkError>,
+    patch_header() : HTTPRequest,
+}
+
+impl HTTPResponse {
+    constructor(resource: uri.URL, header: HTTPResponseHeader, socket: socket.AbstractSocket, cached_recv: io.ArrayBuffer) {
+        this.resource = resource
+        this.header = header
+        this.socket = socket
+        this.cached_recv = cached_recv
+        this.resource
+    }
+}
+
+impl HTTPRequest {
+    constructor(resource: uri.URL, header: HTTPRequestHeader, body: HTTPRequestBody) {
+        this.header = header
+        this.body = body
+        this.resource = resource
+    },
+    constructor(resource: uri.URL, header: HTTPRequestHeader) {
+        this.header = header
+        this.resource = resource
+    },
+    patch_header() : HTTPRequest {
+        if (this.header.headers.contains("content-length") == false && this.body != null) {
+            this.header.add_header("content-length", str.Stringable(this.body.contentLength()).to_string())
+        }
+        if (this.header.headers.contains("content-type") == false && this.body != null) {
+            this.header.add_header("content-type", this.body.contentType())
+        }
+        if (this.header.headers.contains("host") == false) {
+            this.header.add_header("host", this.resource.host)
+        }
+        if (this.header.headers.contains("user-agent") == false) {
+            this.header.add_header("user-agent", "hoshi-libhttp/0.1; JerryChou;")
+        }
+        return this
+    },
+    send() : lang.Result<HTTPResponse, HTTPNetworkError> {
+        let host = socket.resolve_name(this.resource.host)
+        if (host.is_err()) {
+            return lang.Result<HTTPResponse, HTTPNetworkError>.err(HTTPNetworkError.NAME_NOT_RESOLVED)
+        }
+        if (this.resource.protocol == "https") {
+            let result = socket.ssl_socket()
+            if (result.is_err()) {
+                return lang.Result<HTTPResponse, HTTPNetworkError>.err(HTTPNetworkError.CONNECTION_REFUSED)
+            }
+            this.socket = result.unwrap()
+        } elif (this.resource.protocol == "http") {
+            let result = socket.socket()
+            if (result.is_err()) {
+                return lang.Result<HTTPResponse, HTTPNetworkError>.err(HTTPNetworkError.CONNECTION_REFUSED)
+            }
+            this.socket = result.unwrap()
+        } else {
+            return lang.Result<HTTPResponse, HTTPNetworkError>.err(HTTPNetworkError.UNKNOWN_PROTOCOL)
+        }
+        this.socket.connect(host.unwrap(), this.resource.port)
+
+        this.patch_header()
+        let head = this.header.to_string()
+        console.print(head, "\n")
+        this.socket.send(head.data, head.length)
+        if (this.body != null) {
+            this.body.writeTo(this.socket)
+        }
+        let header_result = this.recv_header()
+        if (header_result.is_err()) {
+            return lang.Result<HTTPResponse, HTTPNetworkError>.err(header_result.unwrap_err())
+        }
+        let header = header_result.unwrap()
+        return lang.Result<HTTPResponse, HTTPNetworkError>.ok(HTTPResponse(this.resource, header, this.socket, this.cached_recv))
+    },
+    recv_header() : lang.Result<HTTPResponseHeader, HTTPNetworkError> {
+        // no cache buffer will ever be set before this
+        let recv_s = str.Str(1024u)
+        while (true) {
+            let recv = this.socket.recv(1024u)
+            if (recv.is_err()) {
+                return lang.Result<HTTPResponseHeader, HTTPNetworkError>.err(HTTPNetworkError.CONNECTION_RESET)
+            }
+            let buf = recv.unwrap()
+            if (buf.size == 0) {
+                return lang.Result<HTTPResponseHeader, HTTPNetworkError>.err(HTTPNetworkError.CONNECTION_RESET)
+            }
+            for (let i = 0; i < buf.size - 4; i += 1) {
+                if (buf.buf[i] == 13 && buf.buf[i+1] == 10 && buf.buf[i+2] == 13 && buf.buf[i+3] == 10) {
+                    buf.current_pos = i + 4
+                    break
+                } else {
+                    recv_s.push(buf.buf[i])
+                }
+            }
+            if (buf.current_pos < buf.size) {
+                this.cached_recv = buf
+                break
+            }
+        }
+        let header_result = parseHTTPResponseHeader(recv_s)
+        if (header_result.is_err()) {
+            return lang.Result<HTTPResponseHeader, HTTPNetworkError>.err(HTTPNetworkError.INVALID_HTTP_RESPONSE)
+        }
+        return lang.Result<HTTPResponseHeader, HTTPNetworkError>.ok(header_result.unwrap())
+    },
+    set_body(body: HTTPRequestBody) : HTTPRequest {
+        this.body = body
+        return this
+    },
+    set_header(key: str.Str, value: str.Str) : HTTPRequest {
+        this.header.add_header(key, value)
+        return this
+    }
+}
+
+func open(method: str.Str, url: str.Str, headers: hashMap.HashMap<str.Str, str.Str>, body: HTTPRequestBody) : lang.Result<HTTPRequest, HTTPNetworkError> {
+    let uri_result = uri.parseURL(url)
+    if (uri_result.is_err()) {
+        return lang.Result<HTTPRequest, HTTPNetworkError>.err(HTTPNetworkError.INVALID_URI)
+    }
+    let header = HTTPRequestHeader(method, uri_result.unwrap().target, "HTTP/1.1", headers)
+    return lang.Result<HTTPRequest, HTTPNetworkError>.ok(HTTPRequest(uri_result.unwrap(), header, body))
+}
+
+func open(method: str.Str, url: str.Str) : lang.Result<HTTPRequest, HTTPNetworkError> {
+    let uri_result = uri.parseURL(url)
+    if (uri_result.is_err()) {
+        return lang.Result<HTTPRequest, HTTPNetworkError>.err(HTTPNetworkError.INVALID_URI)
+    }
+    let header = HTTPRequestHeader(method, uri_result.unwrap().target, "HTTP/1.1", hashMap.HashMap<str.Str, str.Str>())
+    return lang.Result<HTTPRequest, HTTPNetworkError>.ok(HTTPRequest(uri_result.unwrap(), header))
+}

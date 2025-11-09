@@ -5,7 +5,7 @@ use runtime "runtime"
 
 func main() : int {
     console.print("libnet-validation: start\n")
-    let socket = net.socket().unwrap()
+    let socket = net.socket.socket().unwrap()
     console.print("libnet-validation: socket created\n")
     if (socket.connect("127.0.0.1", 9002) != 0) {
         console.print("libnet-validation: connection failed\n")

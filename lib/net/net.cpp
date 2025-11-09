@@ -1,4 +1,5 @@
 #include "net.h"
+#include <cstdio>
 
 
 LIBNET_EXPORT const char *libnet_resolve(const char *domain_name) {
@@ -100,6 +101,7 @@ LIBNET_EXPORT sslInfo *libnet_ssl_connect(int fd) {
         return nullptr;
     }
     r->fd = fd;
+    printf("addr: %p", r);
     return r;
 }
 
@@ -133,4 +135,8 @@ LIBNET_EXPORT int libnet_socket_listen(int fd, int backlog) {
     } else {
         return 0;
     }
+}
+
+LIBNET_EXPORT void libnet_free(void *ptr) {
+    return free(ptr);
 }

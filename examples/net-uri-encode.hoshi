@@ -4,14 +4,14 @@ use console "console"
 use runtime "runtime"
 
 func urlencode_validation(source: str.Str, expected: str.Str) : bool {
-    let encoded = net.urlencode(source)
+    let encoded = net.uri.urlencode(source)
     let passed = encoded == expected
     console.print(str.format("encoded: {} status: {}\n", encoded, passed))
     return passed
 }
 
 func urldecode_validation(source: str.Str, expected: str.Str) : bool {
-    let decoded = net.urldecode(source)
+    let decoded = net.uri.urldecode(source)
     let passed = decoded == expected
     console.print(str.format("decoded: {} status: {}\n", decoded, passed))
     return passed

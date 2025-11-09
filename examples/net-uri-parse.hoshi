@@ -4,7 +4,7 @@ use console "console"
 use runtime "runtime"
 
 func uri_validation(uri: str.Str) : bool {
-    let URI = net.parseURL(uri)
+    let URI = net.uri.parseURL(uri)
     if (URI.is_err()) {
         console.print(str.format("Invalid URI: {} (reason: {})", uri, URI.unwrap_err() as int))
         return false

@@ -4,7 +4,7 @@ use console "console"
 use runtime "runtime"
 
 func request_header_parse_validation(s: str.Str) : bool {
-    let parsed = net.parseHTTPRequestHeader(s)
+    let parsed = net.http.parseHTTPRequestHeader(s)
     if (parsed.is_err()) {
         console.print(str.format("Error: {}\n", parsed.unwrap_err() as int))
         return false
@@ -15,7 +15,7 @@ func request_header_parse_validation(s: str.Str) : bool {
 }
 
 func response_header_parse_validation(s: str.Str) : bool {
-    let parsed = net.parseHTTPResponseHeader(s)
+    let parsed = net.http.parseHTTPResponseHeader(s)
     if (parsed.is_err()) {
         console.print(str.format("Error: {}\n", parsed.unwrap_err() as int))
         return false
