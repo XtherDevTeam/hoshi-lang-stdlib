@@ -1,7 +1,6 @@
 #include "net.h"
 #include <cstdio>
 
-
 LIBNET_EXPORT const char *libnet_resolve(const char *domain_name) {
     // Set up hints for the getaddrinfo function
     addrinfo hints{};
@@ -91,17 +90,37 @@ LIBNET_EXPORT void libnet_socket_close(int fd) {
     close_socket(fd);
 }
 
-LIBNET_EXPORT sslInfo *libnet_ssl_connect(int fd) {
+LIBNET_EXPORT sslInfo *libnet_ssl_connect(int fd, const char *domain) {
     auto r = (sslInfo *)malloc(sizeof(sslInfo));
-    if ((r->ctx = SSL_CTX_new(TLS_method())) == nullptr)
+    if ((r->ctx = SSL_CTX_new(TLS_client_method())) == nullptr) {
+        free(r);
         return nullptr;
+    }
+    if (SSL_CTX_set_default_verify_paths(r->ctx) != 1) {
+        free(r);
+        return nullptr;
+    }
     r->ssl = SSL_new(r->ctx);
     SSL_set_fd(r->ssl, fd);
+
+    // only when domain is explicit set, set SNI extension
+    if (domain) {
+        if (SSL_set_tlsext_host_name(r->ssl, domain) != 1) {
+            free(r);
+            return nullptr;
+        }
+        SSL_set1_host(r->ssl, domain);
+    }
+
     if (auto retCode = SSL_connect(r->ssl); retCode != 1) {
+        // print error message
+        // char error_buffer[1024];
+        // ERR_error_string_n(ERR_get_error(), error_buffer, sizeof(error_buffer));
+        // puts(error_buffer);
+        free(r);
         return nullptr;
     }
     r->fd = fd;
-    printf("addr: %p", r);
     return r;
 }
 

@@ -93,7 +93,7 @@ LIBNET_EXPORT int libnet_socket_recv(int fd, char *buf, u_int64_t len, int recvF
 
 LIBNET_EXPORT void libnet_socket_close(int fd);
 
-LIBNET_EXPORT sslInfo *libnet_ssl_connect(int fd);
+LIBNET_EXPORT sslInfo *libnet_ssl_connect(int fd, const char *domain);
 
 LIBNET_EXPORT int libnet_ssl_send(sslInfo *fd, char *data, u_int64_t len);
 

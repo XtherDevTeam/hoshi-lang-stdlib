@@ -168,7 +168,7 @@ func parseHTTPResponseHeader(s: str.Str) : lang.Result<HTTPResponseHeader, HTTPH
             break
         }
         let header_name = header_line.substring(0, colon_index).lowercase()
-        let header_value = header_line.substring(colon_index + 1, header_line.length)
+        let header_value = header_line.substring(colon_index + 2, header_line.length)
         headers[header_name] = header_value
         header_start = header_end + 2
     }
@@ -198,7 +198,11 @@ struct HTTPResponse {
     header: HTTPResponseHeader,
     socket: socket.AbstractSocket,
     cached_recv: io.ArrayBuffer,
-    constructor(resource: uri.URL, header: HTTPResponseHeader, socket: socket.AbstractSocket, cached_recv: io.ArrayBuffer)
+    constructor(resource: uri.URL, header: HTTPResponseHeader, socket: socket.AbstractSocket, cached_recv: io.ArrayBuffer),
+    iterate_chunk() : io.ArrayBuffer,
+    getch() : char,
+    recv_next_raw_response() : lang.Result<io.ArrayBuffer, HTTPNetworkError>,
+    recv_text() : lang.Result<str.Str, HTTPNetworkError>
 }
 
 struct HTTPRequest {
@@ -223,6 +227,123 @@ impl HTTPResponse {
         this.socket = socket
         this.cached_recv = cached_recv
         this.resource
+    },
+    recv_next_raw_response() : lang.Result<io.ArrayBuffer, HTTPNetworkError> {
+        let resp = this.socket.recv(1024u)
+        if (resp.is_err()) {
+            return lang.Result<io.ArrayBuffer, HTTPNetworkError>.err(HTTPNetworkError.CONNECTION_RESET)
+        }
+        let buf = resp.unwrap()
+        if (buf.size == 0) {
+            return lang.Result<io.ArrayBuffer, HTTPNetworkError>.err(HTTPNetworkError.CONNECTION_RESET)
+        }
+        this.cached_recv = buf
+        return lang.Result<io.ArrayBuffer, HTTPNetworkError>.ok(buf)
+    },
+    getch() : char {   
+        if (this.cached_recv.current_pos >= this.cached_recv.size) {
+            let result = this.recv_next_raw_response()
+            if (result.is_err()) {
+                return '\0'
+            }
+            result.unwrap()
+        }
+        let ret = this.cached_recv.buf[this.cached_recv.current_pos]
+        this.cached_recv.current_pos += 1
+        return ret
+    },
+    iterate_chunk() : io.ArrayBuffer {
+        if (this.header.headers.contains("transfer-encoding") == false || this.header.headers["transfer-encoding"] != "chunked") {
+            runtime.puts("Invalid transfer-encoding")
+            return null
+        }
+        let chunk_size = 0
+        let current_ch = this.getch()
+        while ((current_ch >= '0' && current_ch <= '9') || (current_ch >= 'a' && current_ch <= 'f') || (current_ch >= 'A' && current_ch <= 'F')) {
+            chunk_size = chunk_size * 16 + math.hextoint(current_ch)
+            current_ch = this.getch()
+        }
+        if (current_ch != '\r' || this.getch() != '\n') {
+            runtime.puts("Invalid \\r\\n")
+            return null
+        }
+        let chunk_data = io.ArrayBuffer(chunk_size)
+        let current_pos = 0
+        // if chunk size is larger than the remaining data, we need to read more data from the socket, but before that, we read the remaining data into the chunk buffer
+        runtime.memcpy(runtime.runtime_get_string_array_data_pointer(chunk_data.buf), runtime.runtime_get_string_array_data_pointer(this.cached_recv.buf) + this.cached_recv.current_pos, this.cached_recv.size - this.cached_recv.current_pos)
+        current_pos = this.cached_recv.size - this.cached_recv.current_pos
+        while (current_pos < chunk_size) {
+            let result = this.recv_next_raw_response()
+            if (result.is_err()) {
+                runtime.puts("Cannot iterate next raw response")
+                return null
+            }
+            let buf = result.unwrap()
+            if (buf.size == 0) {
+                runtime.puts("Premature end of chunked encoding")
+                return null
+            }
+            // if current_pos + buf.size is larger than chunk_size, we need to move its position to the end_pos and break
+            let actual_read = math.min(chunk_size - current_pos, buf.size)
+            runtime.memcpy(runtime.runtime_get_string_array_data_pointer(chunk_data.buf) + current_pos, runtime.runtime_get_string_array_data_pointer(buf.buf), actual_read)
+            current_pos += actual_read
+            if (actual_read < buf.size) {
+                this.cached_recv.current_pos = actual_read
+                break
+            }
+        }
+        // all data received, return
+        if (this.getch() != '\r' || this.getch() != '\n') {
+            runtime.puts("Invalid \\r\\n in chunked encoding")
+            return null
+        }
+        return chunk_data
+    },
+    recv_text() : lang.Result<str.Str, HTTPNetworkError> {
+        // check if chunked encoding is used
+        if (this.header.headers.contains("transfer-encoding") != false && this.header.headers["transfer-encoding"] == "chunked") {
+            let final = str.Str(1024u)
+            while (true) {
+                let chunk = this.iterate_chunk()
+                if (chunk == null) {
+                    break
+                }
+                if (chunk.size == 0) {
+                    break
+                }
+                console.print("Received chunked data length:", chunk.size as int, "\n")
+                final += chunk.buf
+            }
+            return lang.Result<str.Str, HTTPNetworkError>.ok(final)
+        } elif (this.header.headers.contains("content-length") != false) {
+            let content_length = str.toInt(this.header.headers["content-length"])
+            if (content_length == 0) {
+                return lang.Result<str.Str, HTTPNetworkError>.ok("")
+            }
+            let content = str.Str(content_length as unsigned)
+            let current_pos = 0
+            while (current_pos < content_length) {
+                let result = this.recv_next_raw_response()
+                if (result.is_err()) {
+                    return lang.Result<str.Str, HTTPNetworkError>.err(result.unwrap_err())
+                }
+                let buf = result.unwrap()
+                if (buf.size == 0) {
+                    return lang.Result<str.Str, HTTPNetworkError>.err(HTTPNetworkError.CONNECTION_RESET)
+                }
+                let actual_read = math.min((content_length - current_pos) as unsigned, buf.size as unsigned)
+                runtime.memcpy(runtime.runtime_get_string_array_data_pointer(content.data) + current_pos, runtime.runtime_get_string_array_data_pointer(buf.buf), actual_read)
+                current_pos += actual_read
+                if (actual_read < buf.size) {
+                    this.cached_recv.current_pos = actual_read
+                    break
+                }
+            }
+            content.length = content_length
+            return lang.Result<str.Str, HTTPNetworkError>.ok(content)
+        } else {
+            return lang.Result<str.Str, HTTPNetworkError>.err(HTTPNetworkError.INVALID_HTTP_RESPONSE)
+        }
     }
 }
 
@@ -271,11 +392,12 @@ impl HTTPRequest {
         } else {
             return lang.Result<HTTPResponse, HTTPNetworkError>.err(HTTPNetworkError.UNKNOWN_PROTOCOL)
         }
-        this.socket.connect(host.unwrap(), this.resource.port)
+        if (this.socket.connect(host.unwrap(), this.resource.port) != 0) {
+            return lang.Result<HTTPResponse, HTTPNetworkError>.err(HTTPNetworkError.CONNECTION_REFUSED)
+        }
 
         this.patch_header()
         let head = this.header.to_string()
-        console.print(head, "\n")
         this.socket.send(head.data, head.length)
         if (this.body != null) {
             this.body.writeTo(this.socket)
@@ -290,6 +412,7 @@ impl HTTPRequest {
     recv_header() : lang.Result<HTTPResponseHeader, HTTPNetworkError> {
         // no cache buffer will ever be set before this
         let recv_s = str.Str(1024u)
+        let need_push = true
         while (true) {
             let recv = this.socket.recv(1024u)
             if (recv.is_err()) {
@@ -302,10 +425,18 @@ impl HTTPRequest {
             for (let i = 0; i < buf.size - 4; i += 1) {
                 if (buf.buf[i] == 13 && buf.buf[i+1] == 10 && buf.buf[i+2] == 13 && buf.buf[i+3] == 10) {
                     buf.current_pos = i + 4
+                    need_push = false
                     break
                 } else {
                     recv_s.push(buf.buf[i])
                 }
+            }
+            if (need_push) {
+                recv_s.push(buf.buf[buf.current_pos])
+                recv_s.push(buf.buf[buf.current_pos+1])
+                recv_s.push(buf.buf[buf.current_pos+2])
+                recv_s.push(buf.buf[buf.current_pos+3])
+                buf.current_pos += 4
             }
             if (buf.current_pos < buf.size) {
                 this.cached_recv = buf

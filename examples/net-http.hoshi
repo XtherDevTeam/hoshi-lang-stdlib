@@ -4,22 +4,29 @@ use console "console"
 use runtime "runtime"
 
 func main() : int {
-    console.print("net-http-validation: start")
-    let request = net.http.open("GET", "https://www.xiaokang00010.top:4001")
+    console.print("net-http-validation: start\n")
+    let request = net.http.open("GET", "https://www.bilibili.com:443")
     if (request.is_err()) {
-        console.print("net-http-validation: error opening request")
+        console.print("net-http-validation: error opening request\n")
         return 1
     }
 
     let resp = request.unwrap().send()
     if (resp.is_err()) {
-        console.print("net-http-validation: error sending request")
+        console.print("net-http-validation: error sending request\n")
         return 1
     }
 
     console.print("net-http-validation: received response header successfully\n")
     console.print(resp.unwrap().header, "\n")
+    let body = resp.unwrap().recv_text()
+    if (body.is_err()) {
+        console.print("net-http-validation: error receiving response body\n")
+        return 1
+    }
+    console.print("net-http-validation: received response body successfully\n")
+    console.print(body.unwrap(), "\n")
     resp.unwrap().socket.close()
-    console.print("net-http-validation: closed socket")
+    console.print("net-http-validation: closed socket\n")
     return 0
 }

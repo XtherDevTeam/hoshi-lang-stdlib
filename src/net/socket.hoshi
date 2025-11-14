@@ -36,7 +36,7 @@ import libnet_socket_recv(fd: int32, buf: ptr, len: unsigned, recvFlag: int32) :
 import libnet_socket_close(fd: int32) : none from "builtin"
 
 /* SSL operations */
-import libnet_ssl_connect(fd: int32) : unsigned from "builtin"
+import libnet_ssl_connect(fd: int32, domain: ptr) : unsigned from "builtin"
 import libnet_ssl_send(fd: unsigned, data: ptr, len: unsigned) : int32 from "builtin"
 import libnet_ssl_recv(fd: unsigned, dest: ptr, len: unsigned) : int32 from "builtin"
 import libnet_ssl_close(fd: unsigned) : none from "builtin"
@@ -140,11 +140,14 @@ func socket() : lang.Result<Socket, ResultCode> {
 }
 
 struct SSLSocket {
+    fd: unsigned,
     ssl_fd: unsigned,
     send_flag: int,
     recv_flag: int,
+    verify_domain: str.Str,
     constructor(),
-    constructor(ssl_fd: unsigned, send_flag: int, recv_flag: int),
+    constructor(fd: unsigned, send_flag: int, recv_flag: int),
+    constructor(fd: unsigned, verify_domain: str.Str, send_flag: int, recv_flag: int),
     finalizer(),
     connect(addr: str.Str, port: short) : ResultCode,
     recv(length: unsigned) : lang.Result<io.ArrayBuffer, ResultCode>,
@@ -155,27 +158,46 @@ struct SSLSocket {
 
 impl SSLSocket {
     constructor() {
+        this.fd = 0
         this.ssl_fd = 0
         this.send_flag = 0
         this.recv_flag = 0
     },
-    constructor(ssl_fd: unsigned, send_flag: int, recv_flag: int) {
-        this.ssl_fd = ssl_fd
+    constructor(fd: unsigned, send_flag: int, recv_flag: int) {
+        this.fd = fd
+        this.ssl_fd = 0
         this.send_flag = send_flag
         this.recv_flag = recv_flag
+    },
+    constructor(fd: unsigned, verify_domain: str.Str, send_flag: int, recv_flag: int) {
+        this.fd = fd
+        this.ssl_fd = 0
+        this.send_flag = send_flag
+        this.recv_flag = recv_flag
+        this.verify_domain = verify_domain
     },
     finalizer() {
         if (this.ssl_fd > 0) {
             libnet_ssl_close(this.ssl_fd)
             this.ssl_fd = 0
         }
+        if (this.fd > 0) {
+            libnet_socket_close(this.fd)
+            this.fd = 0
+        }
     },
     connect(addr: str.Str, port: short) : ResultCode {
-        let rc = libnet_socket_connect(this.ssl_fd, runtime.runtime_get_string_array_data_pointer(addr.data), port)
+        let rc = libnet_socket_connect(this.fd, runtime.runtime_get_string_array_data_pointer(addr.data), port)
         if (rc != 0) {
             return rc
         }
-        let rc2 = libnet_ssl_connect(this.ssl_fd)
+        let rc2 = 0u
+        if (this.verify_domain != null) {
+            rc2 = libnet_ssl_connect(this.fd, runtime.runtime_get_string_array_data_pointer(this.verify_domain.data))
+        } else {
+            rc2 = libnet_ssl_connect(this.fd, 0)
+        }
+        
         if (rc2 != 0) {
             this.ssl_fd = rc2
             return ResultCode.SUCCESS
