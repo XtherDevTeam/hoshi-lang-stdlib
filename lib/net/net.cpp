@@ -100,6 +100,7 @@ LIBNET_EXPORT sslInfo *libnet_ssl_connect(int fd, const char *domain) {
         free(r);
         return nullptr;
     }
+
     r->ssl = SSL_new(r->ctx);
     SSL_set_fd(r->ssl, fd);
 
@@ -158,4 +159,18 @@ LIBNET_EXPORT int libnet_socket_listen(int fd, int backlog) {
 
 LIBNET_EXPORT void libnet_free(void *ptr) {
     return free(ptr);
+}
+
+LIBNET_EXPORT int libnet_ssl_get_error() {
+    return ERR_get_error();
+}
+
+LIBNET_EXPORT char *libnet_ssl_error_message(int rc) {
+    char *error_buffer = (char *)malloc(1024);
+    ERR_error_string_n(rc, error_buffer, 1024);
+    return error_buffer;
+}
+
+LIBNET_EXPORT void libnet_ssl_clear_error() {
+    ERR_clear_error();
 }

@@ -40,6 +40,9 @@ import libnet_ssl_connect(fd: int32, domain: ptr) : unsigned from "builtin"
 import libnet_ssl_send(fd: unsigned, data: ptr, len: unsigned) : int32 from "builtin"
 import libnet_ssl_recv(fd: unsigned, dest: ptr, len: unsigned) : int32 from "builtin"
 import libnet_ssl_close(fd: unsigned) : none from "builtin"
+import libnet_ssl_get_error() : int32 from "builtin"
+import libnet_ssl_error_message(code: int32) : ptr from "builtin"
+import libnet_ssl_clear_error() : none from "builtin"
 
 struct Socket {
     fd: unsigned,
@@ -303,4 +306,15 @@ impl SSLSocket : AbstractSocket {
     close() : none {
         this.close()
     }
+}
+
+func ssl_errno() : int {
+    return libnet_ssl_get_error()
+}
+
+func ssl_error_message(code: int) : str.Str {
+    let msg = libnet_ssl_error_message(code)
+    let r = str.Str.from_c_str(msg)
+    libnet_free(msg)
+    return r
 }

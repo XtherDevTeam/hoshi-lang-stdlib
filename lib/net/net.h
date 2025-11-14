@@ -103,4 +103,10 @@ LIBNET_EXPORT void libnet_ssl_close(sslInfo *fd);
 
 LIBNET_EXPORT void libnet_free(void *ptr);
 
+LIBNET_EXPORT int libnet_ssl_get_error();
+
+LIBNET_EXPORT char *libnet_ssl_error_message(int rc);
+
+LIBNET_EXPORT void libnet_ssl_clear_error();
+
 #endif // HOSHILANGSTD_LIBNET

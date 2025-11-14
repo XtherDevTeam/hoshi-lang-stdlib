@@ -5,7 +5,7 @@ use runtime "runtime"
 
 func main() : int {
     console.print("net-http-validation: start\n")
-    let request = net.http.open("GET", "https://www.bilibili.com:443")
+    let request = net.http.open("GET", "https://www.github.com/")
     if (request.is_err()) {
         console.print("net-http-validation: error opening request\n")
         return 1
@@ -13,7 +13,12 @@ func main() : int {
 
     let resp = request.unwrap().send()
     if (resp.is_err()) {
-        console.print("net-http-validation: error sending request\n")
+        let errno = net.socket.ssl_errno()
+        if (errno!= 0) {
+            console.print("net-http-validation: error sending request: ", net.socket.ssl_error_message(errno), "\n")
+        } else {
+            console.print("net-http-validation: error sending request\n")
+        }
         return 1
     }
 

@@ -15,6 +15,8 @@ add_library(std STATIC ${ZIP_SRC} ${SQLITE_SRC} ${LIBNET_SRC})
 
 target_link_libraries(std OpenSSL::SSL OpenSSL::Crypto)
 
+message(STATUS "OpenSSL version: ${OPENSSL_VERSION}")
+
 if (CMAKE_HOST_SYSTEM_NAME MATCHES "Windows")
     file(GLOB FUCK_OPENSSL "${OPENSSL_INCLUDE_DIR}/../*dll*")
     message(Patch for Windows: ${OPENSSL_INCLUDE_DIR})

@@ -8,7 +8,6 @@ use math "math"
 use file "file"
 use socket "socket"
 use uri "uri"
-use console "console"
 
 struct HTTPRequestHeader {
     method: str.Str,
@@ -198,35 +197,18 @@ struct HTTPResponse {
     header: HTTPResponseHeader,
     socket: socket.AbstractSocket,
     cached_recv: io.ArrayBuffer,
-    constructor(resource: uri.URL, header: HTTPResponseHeader, socket: socket.AbstractSocket, cached_recv: io.ArrayBuffer),
+    constructor(resource: uri.URL, socket: socket.AbstractSocket),
     iterate_chunk() : io.ArrayBuffer,
     getch() : char,
     recv_next_raw_response() : lang.Result<io.ArrayBuffer, HTTPNetworkError>,
-    recv_text() : lang.Result<str.Str, HTTPNetworkError>
-}
-
-struct HTTPRequest {
-    resource: uri.URL,
-    header: HTTPRequestHeader,
-    socket: socket.AbstractSocket,
-    body: HTTPRequestBody,
-    cached_recv: io.ArrayBuffer,
-    constructor(resource: uri.URL, header: HTTPRequestHeader, body: HTTPRequestBody),
-    constructor(resource: uri.URL, header: HTTPRequestHeader),
-    send() : lang.Result<HTTPResponse, HTTPNetworkError>,
-    set_body(body: HTTPRequestBody) : HTTPRequest,
-    set_header(key: str.Str, value: str.Str) : HTTPRequest,
-    recv_header() : lang.Result<HTTPResponseHeader, HTTPNetworkError>,
-    patch_header() : HTTPRequest,
+    recv_text() : lang.Result<str.Str, HTTPNetworkError>,
+    recv_header() : lang.Result<HTTPResponse, HTTPNetworkError>,
 }
 
 impl HTTPResponse {
-    constructor(resource: uri.URL, header: HTTPResponseHeader, socket: socket.AbstractSocket, cached_recv: io.ArrayBuffer) {
+    constructor(resource: uri.URL, socket: socket.AbstractSocket) {
         this.resource = resource
-        this.header = header
         this.socket = socket
-        this.cached_recv = cached_recv
-        this.resource
     },
     recv_next_raw_response() : lang.Result<io.ArrayBuffer, HTTPNetworkError> {
         let resp = this.socket.recv(1024u)
@@ -241,7 +223,7 @@ impl HTTPResponse {
         return lang.Result<io.ArrayBuffer, HTTPNetworkError>.ok(buf)
     },
     getch() : char {   
-        if (this.cached_recv.current_pos >= this.cached_recv.size) {
+        if (this.cached_recv == null || this.cached_recv.current_pos >= this.cached_recv.size) {
             let result = this.recv_next_raw_response()
             if (result.is_err()) {
                 return '\0'
@@ -254,7 +236,6 @@ impl HTTPResponse {
     },
     iterate_chunk() : io.ArrayBuffer {
         if (this.header.headers.contains("transfer-encoding") == false || this.header.headers["transfer-encoding"] != "chunked") {
-            runtime.puts("Invalid transfer-encoding")
             return null
         }
         let chunk_size = 0
@@ -264,23 +245,27 @@ impl HTTPResponse {
             current_ch = this.getch()
         }
         if (current_ch != '\r' || this.getch() != '\n') {
-            runtime.puts("Invalid \\r\\n")
             return null
         }
         let chunk_data = io.ArrayBuffer(chunk_size)
         let current_pos = 0
-        // if chunk size is larger than the remaining data, we need to read more data from the socket, but before that, we read the remaining data into the chunk buffer
-        runtime.memcpy(runtime.runtime_get_string_array_data_pointer(chunk_data.buf), runtime.runtime_get_string_array_data_pointer(this.cached_recv.buf) + this.cached_recv.current_pos, this.cached_recv.size - this.cached_recv.current_pos)
-        current_pos = this.cached_recv.size - this.cached_recv.current_pos
+
+        let bytes_to_copy_from_cache = math.min(chunk_size, this.cached_recv.size - this.cached_recv.current_pos)
+
+        if (bytes_to_copy_from_cache > 0) {
+            runtime.memcpy(runtime.runtime_get_string_array_data_pointer(chunk_data.buf), runtime.runtime_get_string_array_data_pointer(this.cached_recv.buf) + this.cached_recv.current_pos, bytes_to_copy_from_cache)
+        }
+
+        current_pos = bytes_to_copy_from_cache
+        this.cached_recv.current_pos += bytes_to_copy_from_cache
+
         while (current_pos < chunk_size) {
             let result = this.recv_next_raw_response()
             if (result.is_err()) {
-                runtime.puts("Cannot iterate next raw response")
                 return null
             }
             let buf = result.unwrap()
             if (buf.size == 0) {
-                runtime.puts("Premature end of chunked encoding")
                 return null
             }
             // if current_pos + buf.size is larger than chunk_size, we need to move its position to the end_pos and break
@@ -289,12 +274,10 @@ impl HTTPResponse {
             current_pos += actual_read
             if (actual_read < buf.size) {
                 this.cached_recv.current_pos = actual_read
-                break
             }
         }
         // all data received, return
         if (this.getch() != '\r' || this.getch() != '\n') {
-            runtime.puts("Invalid \\r\\n in chunked encoding")
             return null
         }
         return chunk_data
@@ -306,12 +289,11 @@ impl HTTPResponse {
             while (true) {
                 let chunk = this.iterate_chunk()
                 if (chunk == null) {
-                    break
+                    return lang.Result<str.Str, HTTPNetworkError>.err(HTTPNetworkError.CONNECTION_RESET)
                 }
                 if (chunk.size == 0) {
                     break
                 }
-                console.print("Received chunked data length:", chunk.size as int, "\n")
                 final += chunk.buf
             }
             return lang.Result<str.Str, HTTPNetworkError>.ok(final)
@@ -322,6 +304,9 @@ impl HTTPResponse {
             }
             let content = str.Str(content_length as unsigned)
             let current_pos = 0
+            // if content length is larger than the remaining data, we need to read more data from the socket, but before that, we read the remaining data into the content buffer
+            runtime.memcpy(runtime.runtime_get_string_array_data_pointer(content.data), runtime.runtime_get_string_array_data_pointer(this.cached_recv.buf) + this.cached_recv.current_pos, this.cached_recv.size - this.cached_recv.current_pos)
+            current_pos = this.cached_recv.size - this.cached_recv.current_pos
             while (current_pos < content_length) {
                 let result = this.recv_next_raw_response()
                 if (result.is_err()) {
@@ -342,10 +327,73 @@ impl HTTPResponse {
             content.length = content_length
             return lang.Result<str.Str, HTTPNetworkError>.ok(content)
         } else {
-            return lang.Result<str.Str, HTTPNetworkError>.err(HTTPNetworkError.INVALID_HTTP_RESPONSE)
+            let content = str.Str(1024u)
+            // if chunk size is larger than the remaining data, we need to read more data from the socket, but before that, we read the remaining data into the chunk buffer
+            runtime.memcpy(runtime.runtime_get_string_array_data_pointer(content.data), runtime.runtime_get_string_array_data_pointer(this.cached_recv.buf) + this.cached_recv.current_pos, this.cached_recv.size - this.cached_recv.current_pos)
+            content.length = this.cached_recv.size - this.cached_recv.current_pos
+            while (true) {
+                let result = this.recv_next_raw_response()
+                if (result.is_err()) {
+                    return lang.Result<str.Str, HTTPNetworkError>.err(result.unwrap_err())
+                }
+                let buf = result.unwrap()
+                if (buf.size == 0) {
+                    return lang.Result<str.Str, HTTPNetworkError>.err(HTTPNetworkError.CONNECTION_RESET)
+                }
+                content += buf.buf
+                if (buf.size < 1024) {
+                    break
+                }
+            }
+            return lang.Result<str.Str, HTTPNetworkError>.ok(content)
         }
+    },
+    recv_header() : lang.Result<HTTPResponse, HTTPNetworkError> {
+        let recv_s = str.Str(1024u)
+        let rnrn_match_array = char[4](13, 10, 13, 10)
+        let rnrn_start_pos = 0
+        let current_ch = this.getch()
+        while (current_ch != 0) {
+            if (rnrn_match_array[rnrn_start_pos] == current_ch) {
+                rnrn_start_pos += 1
+                if (rnrn_start_pos == 4) {
+                    break
+                }
+            } else {
+                for (let i = 0; i < rnrn_start_pos; i += 1) {
+                    recv_s.push(rnrn_match_array[i])
+                }
+                rnrn_start_pos = 0
+                recv_s.push(current_ch)
+            }
+            current_ch = this.getch()
+        }
+        recv_s.push(13)
+        recv_s.push(10)
+        let parsed = parseHTTPResponseHeader(recv_s)
+        if (parsed.is_err()) {
+            return lang.Result<HTTPResponse, HTTPNetworkError>.err(parsed.unwrap_err())
+        }
+        this.header = parsed.unwrap()
+        return lang.Result<HTTPResponse, HTTPNetworkError>.ok(this)
     }
 }
+
+struct HTTPRequest {
+    resource: uri.URL,
+    header: HTTPRequestHeader,
+    socket: socket.AbstractSocket,
+    body: HTTPRequestBody,
+    cached_recv: io.ArrayBuffer,
+    constructor(resource: uri.URL, header: HTTPRequestHeader, body: HTTPRequestBody),
+    constructor(resource: uri.URL, header: HTTPRequestHeader),
+    send() : lang.Result<HTTPResponse, HTTPNetworkError>,
+    set_body(body: HTTPRequestBody) : HTTPRequest,
+    set_header(key: str.Str, value: str.Str) : HTTPRequest,
+    patch_header() : HTTPRequest,
+}
+
+
 
 impl HTTPRequest {
     constructor(resource: uri.URL, header: HTTPRequestHeader, body: HTTPRequestBody) {
@@ -402,52 +450,7 @@ impl HTTPRequest {
         if (this.body != null) {
             this.body.writeTo(this.socket)
         }
-        let header_result = this.recv_header()
-        if (header_result.is_err()) {
-            return lang.Result<HTTPResponse, HTTPNetworkError>.err(header_result.unwrap_err())
-        }
-        let header = header_result.unwrap()
-        return lang.Result<HTTPResponse, HTTPNetworkError>.ok(HTTPResponse(this.resource, header, this.socket, this.cached_recv))
-    },
-    recv_header() : lang.Result<HTTPResponseHeader, HTTPNetworkError> {
-        // no cache buffer will ever be set before this
-        let recv_s = str.Str(1024u)
-        let need_push = true
-        while (true) {
-            let recv = this.socket.recv(1024u)
-            if (recv.is_err()) {
-                return lang.Result<HTTPResponseHeader, HTTPNetworkError>.err(HTTPNetworkError.CONNECTION_RESET)
-            }
-            let buf = recv.unwrap()
-            if (buf.size == 0) {
-                return lang.Result<HTTPResponseHeader, HTTPNetworkError>.err(HTTPNetworkError.CONNECTION_RESET)
-            }
-            for (let i = 0; i < buf.size - 4; i += 1) {
-                if (buf.buf[i] == 13 && buf.buf[i+1] == 10 && buf.buf[i+2] == 13 && buf.buf[i+3] == 10) {
-                    buf.current_pos = i + 4
-                    need_push = false
-                    break
-                } else {
-                    recv_s.push(buf.buf[i])
-                }
-            }
-            if (need_push) {
-                recv_s.push(buf.buf[buf.current_pos])
-                recv_s.push(buf.buf[buf.current_pos+1])
-                recv_s.push(buf.buf[buf.current_pos+2])
-                recv_s.push(buf.buf[buf.current_pos+3])
-                buf.current_pos += 4
-            }
-            if (buf.current_pos < buf.size) {
-                this.cached_recv = buf
-                break
-            }
-        }
-        let header_result = parseHTTPResponseHeader(recv_s)
-        if (header_result.is_err()) {
-            return lang.Result<HTTPResponseHeader, HTTPNetworkError>.err(HTTPNetworkError.INVALID_HTTP_RESPONSE)
-        }
-        return lang.Result<HTTPResponseHeader, HTTPNetworkError>.ok(header_result.unwrap())
+        return HTTPResponse(this.resource, this.socket).recv_header()
     },
     set_body(body: HTTPRequestBody) : HTTPRequest {
         this.body = body

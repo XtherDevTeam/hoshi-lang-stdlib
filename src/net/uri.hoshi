@@ -55,6 +55,9 @@ func parseURL(s: str.Str) : lang.Result<URL, URLParseError> {
     let host = s.substring(host_start, host_end)
     // port is optional and in the host
     let port = 80
+    if (protocol == "https") {
+        port = 443
+    }
     if (host.find(":") != -1) {
         let port_start = host.find(":")
         if (port_start != -1) {
