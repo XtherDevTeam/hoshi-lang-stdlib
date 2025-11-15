@@ -211,7 +211,7 @@ impl HTTPResponse {
         this.socket = socket
     },
     recv_next_raw_response() : lang.Result<io.ArrayBuffer, HTTPNetworkError> {
-        let resp = this.socket.recv(1024u)
+        let resp = this.socket.recv(65536u)
         if (resp.is_err()) {
             return lang.Result<io.ArrayBuffer, HTTPNetworkError>.err(HTTPNetworkError.CONNECTION_RESET)
         }
@@ -285,7 +285,7 @@ impl HTTPResponse {
     recv_text() : lang.Result<str.Str, HTTPNetworkError> {
         // check if chunked encoding is used
         if (this.header.headers.contains("transfer-encoding") != false && this.header.headers["transfer-encoding"] == "chunked") {
-            let final = str.Str(1024u)
+            let final = str.Str(65536u)
             while (true) {
                 let chunk = this.iterate_chunk()
                 if (chunk == null) {
@@ -327,7 +327,7 @@ impl HTTPResponse {
             content.length = content_length
             return lang.Result<str.Str, HTTPNetworkError>.ok(content)
         } else {
-            let content = str.Str(1024u)
+            let content = str.Str(65536u)
             // if chunk size is larger than the remaining data, we need to read more data from the socket, but before that, we read the remaining data into the chunk buffer
             runtime.memcpy(runtime.runtime_get_string_array_data_pointer(content.data), runtime.runtime_get_string_array_data_pointer(this.cached_recv.buf) + this.cached_recv.current_pos, this.cached_recv.size - this.cached_recv.current_pos)
             content.length = this.cached_recv.size - this.cached_recv.current_pos
@@ -349,7 +349,7 @@ impl HTTPResponse {
         }
     },
     recv_header() : lang.Result<HTTPResponse, HTTPNetworkError> {
-        let recv_s = str.Str(1024u)
+        let recv_s = str.Str(65536u)
         let rnrn_match_array = char[4](13, 10, 13, 10)
         let rnrn_start_pos = 0
         let current_ch = this.getch()
@@ -393,8 +393,6 @@ struct HTTPRequest {
     patch_header() : HTTPRequest,
 }
 
-
-
 impl HTTPRequest {
     constructor(resource: uri.URL, header: HTTPRequestHeader, body: HTTPRequestBody) {
         this.header = header
@@ -407,7 +405,11 @@ impl HTTPRequest {
     },
     patch_header() : HTTPRequest {
         if (this.header.headers.contains("content-length") == false && this.body != null) {
-            this.header.add_header("content-length", str.Stringable(this.body.contentLength()).to_string())
+            if (this.body.contentLength() != -1) {
+                this.header.add_header("content-length", str.Stringable(this.body.contentLength()).to_string())
+            } else {
+                this.header.add_header("transfer-encoding", "chunked")
+            }
         }
         if (this.header.headers.contains("content-type") == false && this.body != null) {
             this.header.add_header("content-type", this.body.contentType())
@@ -416,7 +418,7 @@ impl HTTPRequest {
             this.header.add_header("host", this.resource.host)
         }
         if (this.header.headers.contains("user-agent") == false) {
-            this.header.add_header("user-agent", "hoshi-libhttp/0.1; JerryChou;")
+            this.header.add_header("user-agent", "hoshi-libhttp (JerryChou)/0.1; ")
         }
         return this
     },
@@ -462,12 +464,203 @@ impl HTTPRequest {
     }
 }
 
+struct XWWWFormURLEncoded {
+    buffer: str.Str,
+    constructor(data: hashMap.HashMap<str.Str, str.Str>),
+    add_field(key: str.Str, value: str.Str) : XWWWFormURLEncoded
+}
+
+impl XWWWFormURLEncoded {
+    constructor(data: hashMap.HashMap<str.Str, str.Str>) {
+        this.buffer = str.Str(65536u)
+    },
+    add_field(key: str.Str, value: str.Str) : XWWWFormURLEncoded {
+        if (this.buffer.size() != 0) {
+            this.buffer.push('&')
+        }
+        this.buffer += uri.urlencode(key)
+        this.buffer.push('=')
+        this.buffer += uri.urlencode(value)
+        return this
+    }
+}
+
+impl XWWWFormURLEncoded : HTTPRequestBody {
+    contentLength() : unsigned {
+        return this.buffer.length
+    },
+    contentType() : str.Str {
+        return "application/x-www-form-urlencoded"
+    },
+    writeTo(sock: socket.AbstractSocket) : none {
+        sock.send(this.buffer.data, this.buffer.length)
+    }
+}
+
+struct FormDataField {
+    name: str.Str,
+    filename: str.Str,
+    contentType: str.Str,
+    content: file.AbstractFile,
+    constructor(name: str.Str, filename: str.Str, contentType: str.Str, content: file.AbstractFile),
+    constructor(name: str.Str, content: str.Str)
+}
+
+impl FormDataField {
+    constructor(name: str.Str, filename: str.Str, contentType: str.Str, content: file.AbstractFile) {
+        this.name = name
+        this.filename = filename
+        this.contentType = contentType
+        this.content = content
+    },
+    constructor(name: str.Str, content: str.Str) {
+        this.name = name
+        this.filename = ""
+        this.contentType = ""
+        this.content = io.ArrayBuffer(content.data)
+    }
+}
+
+struct FormData {
+    data: vec.Vec<FormDataField>,
+    constructor(data: vec.Vec<FormDataField>),
+    add_field(name: str.Str, filename: str.Str, contentType: str.Str, content: file.AbstractFile) : FormData,
+    add_field(name: str.Str, content: str.Str) : FormData
+}
+
+impl FormData {
+    constructor(data: vec.Vec<FormDataField>) {
+        this.data = data
+    },
+    add_field(name: str.Str, filename: str.Str, contentType: str.Str, content: file.AbstractFile) : FormData {
+        this.data.push(FormDataField(name, filename, contentType, content))
+        return this
+    },
+    add_field(name: str.Str, content: str.Str) : FormData {
+        this.data.push(FormDataField(name, content))
+        return this
+    }
+}
+
+impl FormData : HTTPRequestBody {
+    contentLength() : unsigned {
+        return -1 // Transfer-Encoding: chunked will be automatically used
+    },
+    contentType() : str.Str {
+        return "multipart/form-data; boundary=----WebKitFormBoundaryRippleOfThePastReverie"
+    },
+    writeTo(sock: socket.AbstractSocket) : none {
+        let boundary : str.Str = "----WebKitFormBoundaryRippleOfThePastReverie\r\n"
+        let rn : str.Str = "\r\n"
+        let rnrn0 : str.Str = "0\r\n\r\n"    
+        let chunk_size_str : str.Str = ""
+        for (let index = 0; index < this.data.length; index += 1) {
+            if (this.data[index].filename.size() != 0) {
+                this.data[index].filename = str.format("filename=\"{}\"", uri.urlencode(this.data[index].filename))
+            }
+            if (this.data[index].contentType.size() != 0) {
+                this.data[index].contentType = str.format("Content-Type: {}\r\n", this.data[index].contentType)
+            }
+            let composed_header = str.format("{}Content-Disposition: form-data; name=\"{}\"; {}\r\n{}\r\n", boundary, this.data[index].name, this.data[index].filename, this.data[index].contentType)
+            chunk_size_str = str.Stringable(str.Hex(composed_header.length)).to_string() + "\r\n"
+            sock.send(chunk_size_str.data, chunk_size_str.length)
+            sock.send(composed_header.data, composed_header.length)
+            sock.send(rn.data, rn.length)
+            if (this.data[index].content.size() != -1) {
+                let buffer = this.data[index].content.read(this.data[index].content.size())
+                chunk_size_str = str.Stringable(str.Hex(buffer.size)).to_string() + "\r\n"
+                sock.send(chunk_size_str.data, chunk_size_str.length)
+                sock.send(buffer.data, buffer.size as unsigned)
+                sock.send(rn.data, rn.length)
+            } else {
+                while (true) {
+                    let buffer = this.data[index].content.read(32768)
+                    if (buffer.size == 0) {
+                        break
+                    }
+                    let chunk_size_str = str.Stringable(str.Hex(buffer.size)).to_string() + "\r\n"
+                    sock.send(chunk_size_str.data, chunk_size_str.length)
+                    sock.send(buffer.data, buffer.size as unsigned)
+                    sock.send(rn.data, rn.length)
+                }
+            }
+        }
+        sock.send(rnrn0.data, rnrn0.length)
+    }
+}
+
+struct GenericRequestBody {
+    data: file.AbstractFile,
+    contentType: str.Str,
+    contentLength: unsigned,
+    constructor(data: file.AbstractFile, contentType: str.Str, contentLength: unsigned)
+}
+
+impl GenericRequestBody {
+    constructor(data: file.AbstractFile, contentType: str.Str, contentLength: unsigned) {
+        this.data = data
+        this.contentType = contentType
+        this.contentLength = contentLength
+    }
+}
+
+impl GenericRequestBody : HTTPRequestBody {
+    contentLength() : unsigned {
+        return this.contentLength
+    },
+    contentType() : str.Str {
+        return this.contentType
+    },
+    writeTo(sock: socket.AbstractSocket) : none {
+        let finalize : str.Str = "0\r\n\r\n"
+        let rn : str.Str = "\r\n"
+        if (this.contentLength == -1) {
+            let chunk_size = 32768u
+            while (true) {
+                let buffer = this.data.read(chunk_size as int)
+                let chunk_size_str = str.Stringable(str.Hex(buffer.size)).to_string() + "\r\n"
+                sock.send(chunk_size_str.data, chunk_size_str.length)
+                sock.send(buffer.data, buffer.size as unsigned)
+                sock.send(rn.data, rn.length)
+                if (buffer.size < chunk_size) {
+                    break
+                }
+            }
+            sock.send(finalize.data, 5u)
+        } else {
+            let buffer = this.data.read(this.contentLength as int)
+            sock.send(buffer.data, buffer.size as unsigned)
+        }
+    }
+}
+
+impl str.Str : HTTPRequestBody {
+    contentLength() : unsigned {
+        return this.length
+    },
+    contentType() : str.Str {
+        return "text/plain"
+    },
+    writeTo(sock: socket.AbstractSocket) : none {
+        sock.send(this.data, this.length)
+    }
+}
+
 func open(method: str.Str, url: str.Str, headers: hashMap.HashMap<str.Str, str.Str>, body: HTTPRequestBody) : lang.Result<HTTPRequest, HTTPNetworkError> {
     let uri_result = uri.parseURL(url)
     if (uri_result.is_err()) {
         return lang.Result<HTTPRequest, HTTPNetworkError>.err(HTTPNetworkError.INVALID_URI)
     }
     let header = HTTPRequestHeader(method, uri_result.unwrap().target, "HTTP/1.1", headers)
+    return lang.Result<HTTPRequest, HTTPNetworkError>.ok(HTTPRequest(uri_result.unwrap(), header, body))
+}
+
+func open(method: str.Str, url: str.Str, body: HTTPRequestBody) : lang.Result<HTTPRequest, HTTPNetworkError> {
+    let uri_result = uri.parseURL(url)
+    if (uri_result.is_err()) {
+        return lang.Result<HTTPRequest, HTTPNetworkError>.err(HTTPNetworkError.INVALID_URI)
+    }
+    let header = HTTPRequestHeader(method, uri_result.unwrap().target, "HTTP/1.1", hashMap.HashMap<str.Str, str.Str>())
     return lang.Result<HTTPRequest, HTTPNetworkError>.ok(HTTPRequest(uri_result.unwrap(), header, body))
 }
 

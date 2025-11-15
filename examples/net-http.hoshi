@@ -5,7 +5,7 @@ use runtime "runtime"
 
 func main() : int {
     console.print("net-http-validation: start\n")
-    let request = net.http.open("GET", "https://www.github.com/")
+    let request = net.http.open("GET", "https://github.com/")
     if (request.is_err()) {
         console.print("net-http-validation: error opening request\n")
         return 1
