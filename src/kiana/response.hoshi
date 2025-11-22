@@ -1,0 +1,65 @@
+use str "str"
+use socket "net/socket"
+use http "net/http"
+use hashMap "hashMap"
+
+interface HTTPResponseBody {
+    content_length() : int,
+    content_type() : str.Str,
+    write_to(sock: socket.AbstractSocket) : none
+}
+
+impl str.Str : HTTPResponseBody {
+    content_length() : int {
+        return this.length
+    },
+    content_type() : str.Str {
+        return "text/plain"
+    },
+    write_to(sock: socket.AbstractSocket) : none {
+        sock.send(this.data, this.length)
+    }
+}
+
+struct Response {
+    headers: http.HTTPResponseHeader,
+    body: HTTPResponseBody,
+    constructor(headers: http.HTTPResponseHeader, body: HTTPResponseBody),
+    constructor(status_code: int, status_text: str.Str, body: HTTPResponseBody),
+    patch_headers() : none,
+    write_to(sock: socket.AbstractSocket) : none
+}
+
+impl Response {
+    constructor(headers: http.HTTPResponseHeader, body: HTTPResponseBody) {
+        this.headers = headers
+        this.body = body
+    },
+    constructor(status_code: int, status_text: str.Str, body: HTTPResponseBody) {
+        this.headers = http.HTTPResponseHeader("HTTP/1.1", status_code, status_text, hashMap.HashMap<str.Str, str.Str>())
+        this.body = body
+    },
+    patch_headers() : none {
+        if (this.headers.headers.contains("content-length") == false) {
+            if (this.body.content_length() != -1) {
+                this.headers.add_header("content-length", str.Stringable(this.body.content_length()).to_string())
+            } else {
+                // set chunked transfer encoding
+                this.headers.add_header("transfer-encoding", "chunked")
+            }
+        }
+        if (this.headers.headers.contains("content-type") == false) {
+            this.headers.add_header("content-type", this.body.content_type())
+        }
+        if (this.headers.headers.contains("server") == false) {
+            this.headers.add_header("server", "hoshi-std-kiana/0.1")
+        }
+        return 
+    },
+    write_to(sock: socket.AbstractSocket) : none {
+        this.patch_headers()
+        let head = this.headers.to_string()
+        sock.send(head.data, head.length)
+        this.body.write_to(sock)
+    }
+}

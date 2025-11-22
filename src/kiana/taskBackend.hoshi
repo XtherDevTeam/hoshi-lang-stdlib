@@ -1,0 +1,9 @@
+use str "str"
+use socket "net/socket"
+use response "response"
+
+interface TaskBackend {
+    init() : bool,
+    new_task(sock: socket.AbstractSocket, resp : func() : response.Response) : none,
+    stop() : none
+}

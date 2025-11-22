@@ -82,7 +82,7 @@ impl Socket {
         return libnet_socket_connect(this.fd, runtime.runtime_get_string_array_data_pointer(addr.data), port)
     },
     bind(addr: str.Str, port: short) : ResultCode {
-        return libnet_socket_bind(this.fd, addr.data, port)
+        return libnet_socket_bind(this.fd, runtime.runtime_get_string_array_data_pointer(addr.data), port)
     },
     listen(backlog: int) : ResultCode {
         return libnet_socket_listen(this.fd, backlog)

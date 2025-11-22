@@ -1,0 +1,98 @@
+use hashMap "hashMap"
+use str "str"
+use response "response"
+use request "request"
+use socket "net/socket"
+use taskBackend "taskBackend"
+use legacyBackend "backends/legacy"
+
+enum ResultCode {
+    SUCCESS,
+    SOCKET_CREATION_FAIL,
+    SOCKET_BIND_FAIL,
+    SOCKET_LISTEN_FAIL,
+    HOSTNAME_RESOLUTION_FAIL,
+}
+
+struct ApplicationConfig {
+    host: str.Str,
+    port: short,
+    route: hashMap.HashMap<str.Str, func(request.Request) : response.Response>,
+    constructor(host: str.Str, port: short),
+    add_route(path: str.Str, handler: func(request.Request) : response.Response) : ApplicationConfig
+}
+
+impl ApplicationConfig {
+    constructor(host: str.Str, port: short) {
+        this.host = host
+        this.port = port
+        this.route = hashMap.HashMap<str.Str, func(request.Request) : response.Response>()
+    },
+    add_route(path: str.Str, handler: func(request.Request) : response.Response) : ApplicationConfig {
+        this.route[path] = handler
+        return this
+    }
+}
+
+struct Application {
+    config: ApplicationConfig,
+    socket: socket.Socket,
+    backend: taskBackend.TaskBackend,
+    serve() : ResultCode,
+    use_route(path: str.Str, handler: func(request.Request) : response.Response) : none,
+    constructor(config: ApplicationConfig),
+    constructor(config: ApplicationConfig, backend: taskBackend.TaskBackend),
+    static handler(app: Application, client: socket.Socket) : response.Response
+}
+
+impl Application {
+    constructor(config: ApplicationConfig) {
+        this.config = config
+        this.backend = legacyBackend.LegacyBackend()
+    },
+    constructor(config: ApplicationConfig, backend: taskBackend.TaskBackend) {
+        this.config = config
+        this.backend = backend
+    },
+    use_route(path: str.Str, handler: func(request.Request) : response.Response) : none {
+        this.config.add_route(path, handler)
+    },
+    serve() : ResultCode {
+        let sock = socket.socket()
+        if (sock.is_err()) {
+            return ResultCode.SOCKET_CREATION_FAIL
+        }
+        this.socket = sock.unwrap()
+        let resolved_host = socket.resolve_name(this.config.host)
+        if (resolved_host.is_err()) {
+            return ResultCode.HOSTNAME_RESOLUTION_FAIL
+        }
+        if (this.socket.bind(resolved_host.unwrap(), this.config.port) != socket.ResultCode.SUCCESS) {
+            return ResultCode.SOCKET_BIND_FAIL
+        }
+        if (this.socket.listen(10) != socket.ResultCode.SUCCESS) {
+            return ResultCode.SOCKET_LISTEN_FAIL
+        }
+        while (true) {
+            let client = this.socket.accept()
+            if (client.is_err()) {
+                break
+            }
+            this.backend.new_task(client.unwrap() as socket.AbstractSocket, func[this, client] () : response.Response {
+                return Application.handler(this.this, this.client.unwrap())
+            })
+        }
+        return ResultCode.SUCCESS
+    },
+    static handler(app: Application, client: socket.Socket) : response.Response {
+        let req = request.request(client)
+        if (req.is_err()) {
+            return response.Response(400, "BAD REQUEST", str.Str("Invalid request"))
+        }
+        if (app.config.route.contains(req.unwrap().target.target) == false) {
+            return response.Response(404, "NOT FOUND", str.Str("Page not found"))
+        }
+        let handler = app.config.route[req.unwrap().target.target]
+        return handler(req.unwrap())
+    }
+}

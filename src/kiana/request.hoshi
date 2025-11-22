@@ -1,0 +1,126 @@
+use str "str"
+use hashMap "hashMap"
+use socket "net/socket"
+use http "net/http"
+use io "io"
+use lang "builtin"
+
+enum ResultCode {
+    INVALID_HTTP_HEADER,
+}
+
+struct ResourceTarget {
+    target: str.Str,
+    queries: hashMap.HashMap<str.Str, str.Str>,
+    fragment: str.Str,
+    constructor(target: str.Str, queries: hashMap.HashMap<str.Str, str.Str>, fragment: str.Str),
+    constructor(target: str.Str)
+}
+
+impl ResourceTarget {
+    constructor(target: str.Str, queries: hashMap.HashMap<str.Str, str.Str>, fragment: str.Str) {
+        this.target = target
+        this.queries = queries
+        this.fragment = fragment
+    },
+    constructor(target: str.Str) {
+        this.queries = hashMap.HashMap<str.Str, str.Str>()
+        let split = target.split("#")
+        if (split.length > 1) {
+            this.fragment = split[1]
+        }
+        split = split[0].split("?")
+        this.target = split[0]
+        if (split.length > 1) {
+            let queries = split[1].split("&")
+            for (let index = 0;index < queries.length;index += 1) {
+                let query = queries[index].split("=")
+                if (query.length > 1) {
+                    this.queries[query[0]] = query[1]
+                }
+            }
+        }
+        return this
+    }
+}
+
+struct Request {
+    headers: http.HTTPRequestHeader,
+    target: ResourceTarget,
+    socket: socket.AbstractSocket,
+    cached_recv: io.ArrayBuffer,
+    constructor(headers: http.HTTPRequestHeader, socket: socket.AbstractSocket),
+    constructor(socket: socket.AbstractSocket),
+    getch() : char,
+    recv_next_raw_content() : lang.Result<io.ArrayBuffer, http.HTTPNetworkError>,
+    recv_header() : lang.Result<Request, ResultCode>
+}
+
+impl Request {
+    constructor(headers: http.HTTPRequestHeader, socket: socket.AbstractSocket) {
+        this.headers = headers
+        this.socket = socket
+        this.target = ResourceTarget(headers.target)
+    },
+    recv_next_raw_content() : lang.Result<io.ArrayBuffer, http.HTTPNetworkError> {
+        let resp = this.socket.recv(65536u)
+        if (resp.is_err()) {
+            return lang.Result<io.ArrayBuffer, http.HTTPNetworkError>.err(http.HTTPNetworkError.CONNECTION_RESET)
+        }
+        let buf = resp.unwrap()
+        if (buf.size == 0) {
+            return lang.Result<io.ArrayBuffer, http.HTTPNetworkError>.err(http.HTTPNetworkError.CONNECTION_RESET)
+        }
+        this.cached_recv = buf
+        return lang.Result<io.ArrayBuffer, http.HTTPNetworkError>.ok(buf)
+    },
+    getch() : char {
+        if (this.cached_recv == null || this.cached_recv.current_pos >= this.cached_recv.size) {
+            let result = this.recv_next_raw_content()
+            if (result.is_err()) {
+                return '\0'
+            }
+            result.unwrap()
+        }
+        let ret = this.cached_recv.buf[this.cached_recv.current_pos]
+        this.cached_recv.current_pos += 1
+        return ret
+    },
+    recv_header() : lang.Result<Request, ResultCode> {
+        let recv_s = str.Str(65536u)
+        let rnrn_match_array = char[4](13, 10, 13, 10)
+        let rnrn_start_pos = 0
+        let current_ch = this.getch()
+        while (current_ch != 0) {
+            if (rnrn_match_array[rnrn_start_pos] == current_ch) {
+                rnrn_start_pos += 1
+                if (rnrn_start_pos == 4) {
+                    break
+                }
+            } else {
+                for (let i = 0; i < rnrn_start_pos; i += 1) {
+                    recv_s.push(rnrn_match_array[i])
+                }
+                rnrn_start_pos = 0
+                recv_s.push(current_ch)
+            }
+            current_ch = this.getch()
+        }
+        recv_s.push(13)
+        recv_s.push(10)
+        let parsed = http.parseHTTPRequestHeader(recv_s)
+        if (parsed.is_err()) {
+            return lang.Result<Request, ResultCode>.err(ResultCode.INVALID_HTTP_HEADER)
+        }
+        this.headers = parsed.unwrap()
+        this.target = ResourceTarget(this.headers.target)
+        return lang.Result<Request, ResultCode>.ok(this)
+    },
+    constructor(socket: socket.AbstractSocket) {
+        this.socket = socket
+    }
+}
+
+func request(socket: socket.AbstractSocket) : lang.Result<Request, ResultCode> {
+    return Request(socket).recv_header()
+}

@@ -8,6 +8,7 @@ use math "math"
 use file "file"
 use socket "socket"
 use uri "uri"
+use random "random"
 
 struct HTTPRequestHeader {
     method: str.Str,
@@ -175,9 +176,9 @@ func parseHTTPResponseHeader(s: str.Str) : lang.Result<HTTPResponseHeader, HTTPH
 }
 
 interface HTTPRequestBody {
-    contentLength() : int,
-    contentType() : str.Str,
-    writeTo(writer: socket.AbstractSocket) : none
+    content_length() : int,
+    content_type() : str.Str,
+    write_to(writer: socket.AbstractSocket) : none
 }
 
 enum HTTPNetworkError {
@@ -405,14 +406,14 @@ impl HTTPRequest {
     },
     patch_header() : HTTPRequest {
         if (this.header.headers.contains("content-length") == false && this.body != null) {
-            if (this.body.contentLength() != -1) {
-                this.header.add_header("content-length", str.Stringable(this.body.contentLength()).to_string())
+            if (this.body.content_length() != -1) {
+                this.header.add_header("content-length", str.Stringable(this.body.content_length()).to_string())
             } else {
                 this.header.add_header("transfer-encoding", "chunked")
             }
         }
         if (this.header.headers.contains("content-type") == false && this.body != null) {
-            this.header.add_header("content-type", this.body.contentType())
+            this.header.add_header("content-type", this.body.content_type())
         }
         if (this.header.headers.contains("host") == false) {
             this.header.add_header("host", this.resource.host)
@@ -450,7 +451,7 @@ impl HTTPRequest {
         let head = this.header.to_string()
         this.socket.send(head.data, head.length)
         if (this.body != null) {
-            this.body.writeTo(this.socket)
+            this.body.write_to(this.socket)
         }
         return HTTPResponse(this.resource, this.socket).recv_header()
     },
@@ -486,13 +487,13 @@ impl XWWWFormURLEncoded {
 }
 
 impl XWWWFormURLEncoded : HTTPRequestBody {
-    contentLength() : unsigned {
+    content_length() : unsigned {
         return this.buffer.length
     },
-    contentType() : str.Str {
+    content_type() : str.Str {
         return "application/x-www-form-urlencoded"
     },
-    writeTo(sock: socket.AbstractSocket) : none {
+    write_to(sock: socket.AbstractSocket) : none {
         sock.send(this.buffer.data, this.buffer.length)
     }
 }
@@ -523,6 +524,7 @@ impl FormDataField {
 
 struct FormData {
     data: vec.Vec<FormDataField>,
+    boundary: str.Str,
     constructor(data: vec.Vec<FormDataField>),
     add_field(name: str.Str, filename: str.Str, contentType: str.Str, content: file.AbstractFile) : FormData,
     add_field(name: str.Str, content: str.Str) : FormData
@@ -531,6 +533,7 @@ struct FormData {
 impl FormData {
     constructor(data: vec.Vec<FormDataField>) {
         this.data = data
+        this.boundary = "----WebKitFormBoundaryRippleOfThePastReverie" + str.Stringable(random.Random(random.LegacyRandomEngine()).uinteger()).to_string()
     },
     add_field(name: str.Str, filename: str.Str, contentType: str.Str, content: file.AbstractFile) : FormData {
         this.data.push(FormDataField(name, filename, contentType, content))
@@ -543,14 +546,14 @@ impl FormData {
 }
 
 impl FormData : HTTPRequestBody {
-    contentLength() : unsigned {
+    content_length() : unsigned {
         return -1 // Transfer-Encoding: chunked will be automatically used
     },
-    contentType() : str.Str {
-        return "multipart/form-data; boundary=----WebKitFormBoundaryRippleOfThePastReverie"
+    content_type() : str.Str {
+        return "multipart/form-data; boundary=" + this.boundary
     },
-    writeTo(sock: socket.AbstractSocket) : none {
-        let boundary : str.Str = "----WebKitFormBoundaryRippleOfThePastReverie\r\n"
+    write_to(sock: socket.AbstractSocket) : none {
+        let boundary : str.Str = this.boundary + "\r\n"
         let rn : str.Str = "\r\n"
         let rnrn0 : str.Str = "0\r\n\r\n"    
         let chunk_size_str : str.Str = ""
@@ -605,13 +608,13 @@ impl GenericRequestBody {
 }
 
 impl GenericRequestBody : HTTPRequestBody {
-    contentLength() : unsigned {
+    content_length() : unsigned {
         return this.contentLength
     },
-    contentType() : str.Str {
+    content_type() : str.Str {
         return this.contentType
     },
-    writeTo(sock: socket.AbstractSocket) : none {
+    write_to(sock: socket.AbstractSocket) : none {
         let finalize : str.Str = "0\r\n\r\n"
         let rn : str.Str = "\r\n"
         if (this.contentLength == -1) {
@@ -635,13 +638,13 @@ impl GenericRequestBody : HTTPRequestBody {
 }
 
 impl str.Str : HTTPRequestBody {
-    contentLength() : unsigned {
+    content_length() : unsigned {
         return this.length
     },
-    contentType() : str.Str {
+    content_type() : str.Str {
         return "text/plain"
     },
-    writeTo(sock: socket.AbstractSocket) : none {
+    write_to(sock: socket.AbstractSocket) : none {
         sock.send(this.data, this.length)
     }
 }

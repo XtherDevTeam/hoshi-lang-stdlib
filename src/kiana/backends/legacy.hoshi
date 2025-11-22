@@ -1,0 +1,27 @@
+use taskBackend "taskBackend"
+use request "request"
+use response "response"
+use socket "net/socket"
+
+struct LegacyBackend {
+    constructor()
+}
+
+impl LegacyBackend {
+    constructor() {
+        return this
+    }
+}
+
+impl LegacyBackend : taskBackend.TaskBackend {
+    init() : none {
+        return
+    },
+    new_task(sock: socket.AbstractSocket, resp : func() : response.Response) : none {
+        resp().write_to(sock)
+        sock.close()
+    },
+    stop() : none {
+        return
+    }
+}

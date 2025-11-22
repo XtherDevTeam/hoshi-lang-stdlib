@@ -1,0 +1,12 @@
+use net "net"
+use str "str"
+use console "console"
+use runtime "runtime"
+use kiana "kiana"
+
+func main() : int {
+    console.print("net-http-server: start\n")
+    let app = kiana.application.Application(kiana.application.ApplicationConfig("0.0.0.0", 9002))
+    app.serve()
+    return 0
+}
