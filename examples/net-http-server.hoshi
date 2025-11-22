@@ -3,10 +3,48 @@ use str "str"
 use console "console"
 use runtime "runtime"
 use kiana "kiana"
+use http "net/http"
+use hashMap "hashMap"
+
+func root(req: kiana.request.Request) : kiana.response.Response {
+    let body = str.Str("
+        <!doctype html>
+        <html>
+            <head></head>
+            <body>
+                <div class=\"a\">琪亚娜，出击！</div>
+                <div class=\"b\">Hello, hoshi-lang http-server!</div>
+            </body>
+            <style>
+            .a {
+                background-image: -webkit-linear-gradient(bottom,red,yellow,black); 
+                font-weight: bolder;
+                font-size: 8rem;
+                font-style: italic;
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+            }
+            .b {
+                margin-left: 100px;
+                background-image: -webkit-linear-gradient(bottom,silver,gray,white); 
+                font-weight: bolder;
+                font-size: 8rem;
+                font-style: italic;
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+            }
+            </style>
+        </html>
+    ")
+    let headers = http.HTTPResponseHeader("HTTP/1.1", 200, "OK", hashMap.HashMap<str.Str, str.Str>())
+                        .add_header("Content-Type", "text/html; charset=UTF-8")
+    return kiana.response.Response(headers, body)
+}
 
 func main() : int {
     console.print("net-http-server: start\n")
-    let app = kiana.application.Application(kiana.application.ApplicationConfig("0.0.0.0", 9002))
+    let app = kiana.application.Application(kiana.application.ApplicationConfig("0.0.0.0", 9003))
+    app.use_route("/", func root)
     app.serve()
     return 0
 }

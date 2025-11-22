@@ -92,7 +92,7 @@ impl Application {
         if (app.config.route.contains(req.unwrap().target.target) == false) {
             return response.Response(404, "NOT FOUND", str.Str("Page not found"))
         }
-        let handler = app.config.route[req.unwrap().target.target]
-        return handler(req.unwrap())
+        let handle = app.config.route[req.unwrap().target.target]
+        return handle(req.unwrap())
     }
 }
