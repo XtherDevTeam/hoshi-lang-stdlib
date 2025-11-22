@@ -1,0 +1,30 @@
+use taskBackend "taskBackend"
+use request "request"
+use response "response"
+use socket "net/socket"
+use threading "threading"
+
+struct ThreadingBackend {
+    constructor()
+}
+
+impl ThreadingBackend {
+    constructor() {
+        return this
+    }
+}
+
+impl ThreadingBackend : taskBackend.TaskBackend {
+    init() : none {
+        return
+    },
+    new_task(sock: socket.AbstractSocket, resp : func() : response.Response) : none {
+        threading.Thread(func [sock, resp] () : none {
+            this.resp().write_to(this.sock)
+            this.sock.close()
+        }).start()
+    },
+    stop() : none {
+        return
+    }
+}

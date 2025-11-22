@@ -77,33 +77,33 @@ struct sslInfo {
 // pointer shall be finalized by the caller
 LIBNET_EXPORT const char *libnet_resolve(const char *domain_name);
 
-LIBNET_EXPORT int libnet_socket(int64_t *result);
+LIBNET_EXPORT int64_t libnet_socket(int64_t *result);
 
-LIBNET_EXPORT int libnet_socket_connect(int fd, const char *ipAddr, uint16_t port);
+LIBNET_EXPORT int64_t libnet_socket_connect(int fd, const char *ipAddr, uint16_t port);
 
-LIBNET_EXPORT int libnet_socket_bind(int fd, const char *ipAddr, uint16_t port);
+LIBNET_EXPORT int64_t libnet_socket_bind(int fd, const char *ipAddr, uint16_t port);
 
-LIBNET_EXPORT int libnet_socket_listen(int fd, int backlog = LIBNET_DEFAULT_BACKLOG);
+LIBNET_EXPORT int64_t libnet_socket_listen(int fd, int backlog = LIBNET_DEFAULT_BACKLOG);
 
-LIBNET_EXPORT int libnet_socket_accept(int fd, sockaddr_in *clientAddr, socklen_t *clientAddrLen);
+LIBNET_EXPORT int64_t libnet_socket_accept(int fd, sockaddr_in *clientAddr, socklen_t *clientAddrLen);
 
-LIBNET_EXPORT int libnet_socket_send(int fd, char *buf, u_int64_t len, int sendFlag = 0);
+LIBNET_EXPORT int64_t libnet_socket_send(int fd, char *buf, u_int64_t len, int sendFlag = 0);
 
-LIBNET_EXPORT int libnet_socket_recv(int fd, char *buf, u_int64_t len, int recvFlag = 0);
+LIBNET_EXPORT int64_t libnet_socket_recv(int fd, char *buf, u_int64_t len, int recvFlag = 0);
 
 LIBNET_EXPORT void libnet_socket_close(int fd);
 
 LIBNET_EXPORT sslInfo *libnet_ssl_connect(int fd, const char *domain);
 
-LIBNET_EXPORT int libnet_ssl_send(sslInfo *fd, char *data, u_int64_t len);
+LIBNET_EXPORT int64_t libnet_ssl_send(sslInfo *fd, char *data, u_int64_t len);
 
-LIBNET_EXPORT int libnet_ssl_recv(sslInfo *fd, char *dest, u_int64_t len);
+LIBNET_EXPORT int64_t libnet_ssl_recv(sslInfo *fd, char *dest, u_int64_t len);
 
 LIBNET_EXPORT void libnet_ssl_close(sslInfo *fd);
 
 LIBNET_EXPORT void libnet_free(void *ptr);
 
-LIBNET_EXPORT int libnet_ssl_get_error();
+LIBNET_EXPORT int64_t libnet_ssl_get_error();
 
 LIBNET_EXPORT char *libnet_ssl_error_message(int rc);
 

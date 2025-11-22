@@ -8,12 +8,13 @@ file(GLOB ZIP_SRC lib/zip/*.c)
 file(GLOB SQLITE_SRC lib/sqlite/*.c)
 file(GLOB LIBNET_SRC lib/net/*.cpp)
 
-
 find_package(OpenSSL REQUIRED)
 
-add_library(std STATIC ${ZIP_SRC} ${SQLITE_SRC} ${LIBNET_SRC})
+add_library(std STATIC ${ZIP_SRC} ${SQLITE_SRC} ${LIBNET_SRC} ${LIBSIG_SRC})
 
 target_link_libraries(std OpenSSL::SSL OpenSSL::Crypto)
+
+include_directories(hoshi-lang/)
 
 message(STATUS "OpenSSL version: ${OPENSSL_VERSION}")
 

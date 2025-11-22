@@ -5,6 +5,9 @@ use request "request"
 use socket "net/socket"
 use taskBackend "taskBackend"
 use legacyBackend "backends/legacy"
+use threadBackend "backends/thread"
+use signal "signal"
+use console "console"
 
 enum ResultCode {
     SUCCESS,
@@ -48,7 +51,7 @@ struct Application {
 impl Application {
     constructor(config: ApplicationConfig) {
         this.config = config
-        this.backend = legacyBackend.LegacyBackend()
+        this.backend = threadBackend.ThreadingBackend()
     },
     constructor(config: ApplicationConfig, backend: taskBackend.TaskBackend) {
         this.config = config
@@ -62,6 +65,13 @@ impl Application {
         if (sock.is_err()) {
             return ResultCode.SOCKET_CREATION_FAIL
         }
+
+        signal.init()
+        let sig_handler = func[this] (signum: int) : none {
+            this.this.socket.close()
+        }
+        signal.register(signal.Signal.SIGINT, sig_handler)
+
         this.socket = sock.unwrap()
         let resolved_host = socket.resolve_name(this.config.host)
         if (resolved_host.is_err()) {
@@ -73,6 +83,7 @@ impl Application {
         if (this.socket.listen(10) != socket.ResultCode.SUCCESS) {
             return ResultCode.SOCKET_LISTEN_FAIL
         }
+
         while (true) {
             let client = this.socket.accept()
             if (client.is_err()) {
@@ -82,6 +93,9 @@ impl Application {
                 return Application.handler(this.this, this.client.unwrap())
             })
         }
+
+        signal.default(signal.Signal.SIGINT)
+
         return ResultCode.SUCCESS
     },
     static handler(app: Application, client: socket.Socket) : response.Response {
