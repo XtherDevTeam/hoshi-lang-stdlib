@@ -5,6 +5,9 @@ use runtime "runtime"
 use kiana "kiana"
 use http "net/http"
 use hashMap "hashMap"
+use json "json"
+use fs "fs"
+use file "file"
 
 func root(req: kiana.request.Request) : kiana.response.Response {
     let body = str.Str("
@@ -41,10 +44,26 @@ func root(req: kiana.request.Request) : kiana.response.Response {
     return kiana.response.Response(headers, body)
 }
 
+func json_test(req: kiana.request.Request) : kiana.response.Response {
+    let body = json.parse("{\"a\": \"Hello, world!\", \"b\": [1, 2, 3], \"c\": null}").unwrap()
+    return kiana.response.Response(http.HTTPResponseHeader("HTTP/1.1", 200, "OK", hashMap.HashMap<str.Str, str.Str>()), body)
+}
+
+func file_test(req: kiana.request.Request) : kiana.response.Response {
+    let f = fs.open("/Users/chou/Downloads/The Graduation Trip.7z", "rb")
+    if (f.is_err()) {
+        return kiana.response.Response(http.HTTPResponseHeader("HTTP/1.1", 404, "Not Found", hashMap.HashMap<str.Str, str.Str>()), str.Str("File not found"))
+    }
+    let fi = f.unwrap() as file.AbstractFile
+    return kiana.response.Response(http.HTTPResponseHeader("HTTP/1.1", 200, "OK").add_header("Content-Type", "application/octet-stream").add_header("Content-Disposition", "attachment; filename=\"The Graduation Trip.7z\""), fi)
+}
+
 func main() : int {
     console.print("net-http-server: start\n")
     let app = kiana.application.Application(kiana.application.ApplicationConfig("0.0.0.0", 9002))
     app.use_route("/", func root)
+    app.use_route("/json", func json_test)
+    app.use_route("/file", func file_test)
     let rc = app.serve()
     console.print("net-http-server: exit with code", rc as int, "\n")
     return 0

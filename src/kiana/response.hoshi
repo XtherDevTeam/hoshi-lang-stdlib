@@ -2,6 +2,12 @@ use str "str"
 use socket "net/socket"
 use http "net/http"
 use hashMap "hashMap"
+use file "file"
+use json "json"
+
+enum HTTPResponseBodyChunkSize {
+    default = 1048576
+}
 
 interface HTTPResponseBody {
     content_length() : int,
@@ -18,6 +24,57 @@ impl str.Str : HTTPResponseBody {
     },
     write_to(sock: socket.AbstractSocket) : none {
         sock.send(this.data, this.length)
+    }
+}
+
+impl file.AbstractFile : HTTPResponseBody {
+    content_length() : int {
+        return this.size() // -1 if unknown, then fallback to chunked transfer encoding
+    },
+    content_type() : str.Str {
+        return "application/octet-stream"
+    },
+    write_to(sock: socket.AbstractSocket) : none {
+        let content_size = this.size()
+        let rn : str.Str = "\r\n"
+        let rnrn0 : str.Str = "0\r\n\r\n"
+        if (content_size == -1) {
+            // fallback to chunked transfer encoding
+            let buffer = this.read(HTTPResponseBodyChunkSize.default as int)
+            while (buffer.size > 0) {
+                let chunk_size_str = str.Stringable(str.Hex(buffer.size)).to_string() + "\r\n"
+                sock.send(chunk_size_str.data, chunk_size_str.length)
+                sock.send(buffer.data, buffer.size as unsigned)
+                sock.send(rn.data, rn.length)
+                buffer = this.read(HTTPResponseBodyChunkSize.default as int)
+            }
+            sock.send(rnrn0.data, rnrn0.length)
+        } else {
+            let buffer = this.read(HTTPResponseBodyChunkSize.default as int)
+            while (buffer.size > 0) {
+                sock.send(buffer.data, buffer.size as unsigned)
+                buffer = this.read(HTTPResponseBodyChunkSize.default as int)
+            }
+        }
+    }
+}
+
+impl json.JSONValue : HTTPResponseBody {
+    content_length() : int {
+        return -1 // we would like to serialize the JSON value to a string only once, no length is set, and we will use chunked transfer encoding
+    },
+    content_type() : str.Str {
+        return "application/json"
+    },
+    write_to(sock: socket.AbstractSocket) : none {
+        let json_str = this.to_string()
+        let rn : str.Str = "\r\n"
+        let rnrn0 : str.Str = "0\r\n\r\n"
+        let chunk_size_str = str.Stringable(str.Hex(json_str.length)).to_string() + "\r\n"
+        sock.send(chunk_size_str.data, chunk_size_str.length)
+        sock.send(json_str.data, json_str.length)
+        sock.send(rn.data, rn.length)
+        sock.send(rnrn0.data, rnrn0.length)
     }
 }
 

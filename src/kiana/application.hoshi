@@ -7,7 +7,6 @@ use taskBackend "taskBackend"
 use legacyBackend "backends/legacy"
 use threadBackend "backends/thread"
 use signal "signal"
-use console "console"
 
 enum ResultCode {
     SUCCESS,

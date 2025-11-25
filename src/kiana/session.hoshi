@@ -1,0 +1,7 @@
+use str "str"
+use hashMap "hashMap"
+
+struct Session {
+    data: hashMap.HashMap<str.Str, str.Str>,
+    expires: int
+}

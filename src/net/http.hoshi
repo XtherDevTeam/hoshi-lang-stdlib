@@ -26,6 +26,7 @@ struct HTTPResponseHeader {
     status_message: str.Str,
     headers: hashMap.HashMap<str.Str, str.Str>,
     constructor(version: str.Str, status_code: int, status_message: str.Str, headers: hashMap.HashMap<str.Str, str.Str>),
+    constructor(version: str.Str, status_code: int, status_message: str.Str),
     to_string() : str.Str,
     add_header(key: str.Str, value: str.Str) : HTTPResponseHeader
 }
@@ -57,6 +58,12 @@ impl HTTPResponseHeader {
         this.status_code = status_code
         this.status_message = status_message
         this.headers = headers
+    },
+    constructor(version: str.Str, status_code: int, status_message: str.Str) {
+        this.version = version
+        this.status_code = status_code
+        this.status_message = status_message
+        this.headers = hashMap.HashMap<str.Str, str.Str>()
     },
     to_string() : str.Str {
         let first_line = str.format("{} {} {}\r\n", this.version, this.status_code, this.status_message)
