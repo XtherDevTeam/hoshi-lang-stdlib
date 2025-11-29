@@ -1,0 +1,63 @@
+use console "console"
+use str "str"
+use time "time"
+
+enum Severity {
+    DEBUG,
+    INFO,
+    WARN,
+    ERROR
+}
+
+interface Logger {
+    log(message: str.Str) : none,
+    debug(message: str.Str) : none,
+    info(message: str.Str) : none,
+    warn(message: str.Str) : none,
+    error(message: str.Str) : none
+}
+
+struct ConsoleLogger {
+    level: Severity,
+    constructor(level: Severity)
+}
+
+impl ConsoleLogger {
+    constructor(level: Severity) {
+        this.level = level
+    }
+}
+
+impl ConsoleLogger : Logger {
+    log(message: str.Str) : none {
+        let current = time.Date.now()
+        if (this.level <= Severity.INFO) {
+            console.print(str.format("[{}/LOG] {}\n", current, message))
+        }
+    },
+    debug(message: str.Str) : none {
+        let current = time.Date.now()
+        if (this.level <= Severity.DEBUG) {
+            console.print(str.format("[{}/DEBUG] {}\n", current, message))
+        }
+    },
+    info(message: str.Str) : none {
+        let current = time.Date.now()
+        if (this.level <= Severity.INFO) {
+            console.print(str.format("[{}/INFO] {}\n", current, message))
+        }
+    },
+    warn(message: str.Str) : none {
+        let current = time.Date.now()
+        if (this.level <= Severity.WARN) {
+            console.print(str.format("[{}/WARN] {}\n", current, message))
+        }
+    },
+    error(message: str.Str) : none {
+        let current = time.Date.now()
+        if (this.level <= Severity.ERROR) {
+            console.print(str.format("[{}/ERROR] {}\n", current, message))
+        }
+    }
+}
+

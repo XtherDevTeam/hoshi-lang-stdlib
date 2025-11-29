@@ -7,6 +7,7 @@ use taskBackend "taskBackend"
 use legacyBackend "backends/legacy"
 use threadBackend "backends/thread"
 use signal "signal"
+use logger "logger"
 
 enum ResultCode {
     SUCCESS,
@@ -40,10 +41,12 @@ struct Application {
     config: ApplicationConfig,
     socket: socket.Socket,
     backend: taskBackend.TaskBackend,
+    logger: logger.Logger,
     serve() : ResultCode,
     use_route(path: str.Str, handler: func(request.Request) : response.Response) : none,
     constructor(config: ApplicationConfig),
     constructor(config: ApplicationConfig, backend: taskBackend.TaskBackend),
+    constructor(config: ApplicationConfig, backend: taskBackend.TaskBackend, logger: logger.Logger),
     static handler(app: Application, client: socket.Socket) : response.Response
 }
 
@@ -51,10 +54,17 @@ impl Application {
     constructor(config: ApplicationConfig) {
         this.config = config
         this.backend = threadBackend.ThreadingBackend()
+        this.logger = logger.ConsoleLogger(logger.Severity.INFO)
     },
     constructor(config: ApplicationConfig, backend: taskBackend.TaskBackend) {
         this.config = config
         this.backend = backend
+        this.logger = logger.ConsoleLogger(logger.Severity.INFO)
+    },
+    constructor(config: ApplicationConfig, backend: taskBackend.TaskBackend, logger: logger.Logger) {
+        this.config = config
+        this.backend = backend
+        this.logger = logger
     },
     use_route(path: str.Str, handler: func(request.Request) : response.Response) : none {
         this.config.add_route(path, handler)
@@ -64,12 +74,14 @@ impl Application {
         if (sock.is_err()) {
             return ResultCode.SOCKET_CREATION_FAIL
         }
+        this.logger.debug("Socket created")
 
         signal.init()
         let sig_handler = func[this] (signum: int) : none {
             this.this.socket.close()
         }
         signal.register(signal.Signal.SIGINT, sig_handler)
+        this.logger.debug("Signal handler registered")
 
         this.socket = sock.unwrap()
         let resolved_host = socket.resolve_name(this.config.host)
@@ -79,19 +91,25 @@ impl Application {
         if (this.socket.bind(resolved_host.unwrap(), this.config.port) != socket.ResultCode.SUCCESS) {
             return ResultCode.SOCKET_BIND_FAIL
         }
-        if (this.socket.listen(10) != socket.ResultCode.SUCCESS) {
+        this.logger.debug(str.format("Socket bound at {}:{}", this.config.host, this.config.port as int))
+        if (this.socket.listen(32) != socket.ResultCode.SUCCESS) {
             return ResultCode.SOCKET_LISTEN_FAIL
         }
+        this.logger.debug("Socket listening")
+        this.logger.info(str.format("Server started at {}:{}", this.config.host, this.config.port as int))
 
         while (true) {
             let client = this.socket.accept()
             if (client.is_err()) {
                 break
             }
+            this.logger.debug("Client connected")
             this.backend.new_task(client.unwrap() as socket.AbstractSocket, func[this, client] () : response.Response {
                 return Application.handler(this.this, this.client.unwrap())
             })
         }
+
+        this.logger.info("Server stopped, probably by signal")
 
         signal.default(signal.Signal.SIGINT)
 
@@ -105,6 +123,7 @@ impl Application {
         if (app.config.route.contains(req.unwrap().target.target) == false) {
             return response.Response(404, "NOT FOUND", str.Str("Page not found"))
         }
+        app.logger.info(str.format("Serving request for endpoint {}", req.unwrap().target.target))
         let handle = app.config.route[req.unwrap().target.target]
         return handle(req.unwrap())
     }
