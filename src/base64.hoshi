@@ -1,0 +1,127 @@
+use str "str"
+
+func encode(s: str.Str) : str.Str {
+    let res = str.Str((s.length / 3u + 1u) + 4u)
+    let chars : str.Str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    let i = 0u
+    while (i + 2u < s.length) {
+        let b1 : char = s[i]
+        let b2 : char = s[i + 1u] 
+        let b3 : char = s[i + 2u]
+        
+        let n = (b1 << 16u) + (b2 << 8u) + b3
+        
+        res.push(chars[(n >> 18u) & 0x3fu])
+        res.push(chars[(n >> 12u) & 0x3fu])
+        res.push(chars[(n >> 6u) & 0x3fu])
+        res.push(chars[n & 0x3fu])
+        
+        i += 3u
+    }
+
+    let len = s.length % 3u
+    if (len == 1u) {
+        res.push(chars[(s[i] >> 2u) & 0x3fu])
+        res.push(chars[(s[i] << 4u) & 0x3fu])
+        res.push('=')
+        res.push('=')
+    } elif (len == 2u) {
+        res.push(chars[(s[i] >> 2u) & 0x3fu])
+        res.push(chars[((s[i] << 4u) + (s[i + 1u] >> 4u)) & 0x3fu])
+        res.push(chars[(s[i + 1u] << 2u) & 0x3fu])
+        res.push('=')
+    }
+    return res
+}
+
+func always_inline locate_char_in_code_table(ch: char) : unsigned {
+    if (ch >= 'A' && ch <= 'Z') {
+        return ch - 'A'
+    } elif (ch >= 'a' && ch <= 'z') {
+        return ch - 'a' + 26u
+    } elif (ch >= '0' && ch <= '9') {
+        return ch - '0' + 52u
+    } elif (ch == '+' || ch == '-') {
+        return 62u
+    } elif (ch == '/' || ch == '_') {
+        return 63u
+    } else {
+        return 0u
+    }
+}
+
+func decode(s: str.Str) : str.Str {
+    let res = str.Str((s.length / 4u) * 3u)
+    let i = 0u
+    
+    while (i < s.length) {
+        let n = locate_char_in_code_table(s[i]) << 18u
+        n += locate_char_in_code_table(s[i + 1u]) << 12u
+        n += locate_char_in_code_table(s[i + 2u]) << 6u
+        n += locate_char_in_code_table(s[i + 3u])
+
+        res.push((n >> 16u) & 0xffu)
+        if (s[i + 2u] != '=') {
+            res.push((n >> 8u) & 0xffu)
+        }
+        if (s[i + 3u] != '=') {
+            res.push(n & 0xffu)
+        }
+        i += 4u
+    }
+    
+    return res
+}
+
+func encodeURI(s : str.Str) : str.Str {
+    let res = str.Str((s.length / 3u + 1u) + 4u)
+    let chars : str.Str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+    let i = 0u
+    while (i + 2u < s.length) {
+        let b1 : char = s[i]
+        let b2 : char = s[i + 1u] 
+        let b3 : char = s[i + 2u]
+        
+        let n = (b1 << 16u) + (b2 << 8u) + b3
+        
+        res.push(chars[(n >> 18u) & 0x3fu])
+        res.push(chars[(n >> 12u) & 0x3fu])
+        res.push(chars[(n >> 6u) & 0x3fu])
+        res.push(chars[n & 0x3fu])
+        
+        i += 3u
+    }
+
+    let len = s.length % 3u
+    if (len == 1u) {
+        res.push(chars[(s[i] >> 2u) & 0x3fu])
+        res.push(chars[(s[i] << 4u) & 0x3fu])
+    } elif (len == 2u) {
+        res.push(chars[(s[i] >> 2u) & 0x3fu])
+        res.push(chars[((s[i] << 4u) + (s[i + 1u] >> 4u)) & 0x3fu])
+        res.push(chars[(s[i + 1u] << 2u) & 0x3fu])
+    }
+    return res
+}
+
+func decodeURI(s: str.Str) : str.Str {
+    let res = str.Str((s.length / 4u) * 3u)
+    let i = 0u
+    
+    while (i < s.length) {
+        let n = locate_char_in_code_table(s[i]) << 18u
+        n += locate_char_in_code_table(s[i + 1u]) << 12u
+        n += locate_char_in_code_table(s[i + 2u]) << 6u
+        n += locate_char_in_code_table(s[i + 3u])
+        res.push((n >> 16u) & 0xffu)
+        if (i + 2u < s.length) {
+            res.push((n >> 8u) & 0xffu)
+        }
+        if (i + 3u < s.length) {
+            res.push(n & 0xffu)
+        }
+        i += 4u
+    }
+
+    return res
+}

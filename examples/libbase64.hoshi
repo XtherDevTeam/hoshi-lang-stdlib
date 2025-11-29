@@ -1,0 +1,49 @@
+use base64 "base64"
+use str "str"
+use console "console"
+
+func validate(ex: str.Str, expected: str.Str) : bool {
+    let encoded = base64.encode(ex)
+    let decoded = base64.decode(expected)
+    console.print("base64-validation: original:", ex, "encoded:", encoded, "decoded:", decoded, "\n")
+    return encoded == expected && decoded == ex
+}
+
+func validateURISafe(ex: str.Str, expected: str.Str) : bool {
+    let encoded = base64.encodeURI(ex)
+    let decoded = base64.decodeURI(encoded)
+    console.print("base64-validation: original:", ex, "encoded:", encoded, "decoded:", decoded, "\n")
+    return decoded == ex
+}
+
+func main() : int {
+    let egs = new str.Str[](
+        "Hello, world!",
+        "The stars are distant as always, still shining with the light of their grand deaths in vacant space. Let it penetrate the darkness when a beast roars a final wail",
+        "Crash against the barrier above the crowd, flaring up pieces in the air to show a fairy starfall.",
+        "愿世间美好都能得到祝福。"
+    )
+    let expecteds = new str.Str[](
+        "SGVsbG8sIHdvcmxkIQ==", 
+        "VGhlIHN0YXJzIGFyZSBkaXN0YW50IGFzIGFsd2F5cywgc3RpbGwgc2hpbmluZyB3aXRoIHRoZSBsaWdodCBvZiB0aGVpciBncmFuZCBkZWF0aHMgaW4gdmFjYW50IHNwYWNlLiBMZXQgaXQgcGVuZXRyYXRlIHRoZSBkYXJrbmVzcyB3aGVuIGEgYmVhc3Qgcm9hcnMgYSBmaW5hbCB3YWls", 
+        "Q3Jhc2ggYWdhaW5zdCB0aGUgYmFycmllciBhYm92ZSB0aGUgY3Jvd2QsIGZsYXJpbmcgdXAgcGllY2VzIGluIHRoZSBhaXIgdG8gc2hvdyBhIGZhaXJ5IHN0YXJmYWxsLg==", 
+        "5oS/5LiW6Ze0576O5aW96YO96IO95b6X5Yiw56Wd56aP44CC"
+    )
+    console.print("base64-validation: start\n")
+    let success = 0
+    for (let i = 0; i < egs.length; i += 1) {
+        if (validate(egs[i], expecteds[i]) && validateURISafe(egs[i], expecteds[i])) {
+            console.print("base64-validation: test case", i, "passed\n")
+            success += 1
+        } else {
+            console.print("base64-validation: test case", i, "failed\n")
+        }
+    }
+    if (success == egs.length) {
+        console.print("base64-validation: all test cases passed\n")
+        return 0
+    } else {
+        console.print("base64-validation:", success, "out of", egs.length, "test cases passed\n")
+        return 1
+    }
+}
