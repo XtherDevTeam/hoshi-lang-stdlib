@@ -1,0 +1,169 @@
+use runtime "runtime"
+use str "str"
+use imports "imports"
+use lang "builtin"
+use console "console"
+
+func always_inline inttohex(n: char) : char {
+    if (n < 10) {
+        return n + '0'
+    } else {
+        return n - 10 + 'a'
+    }
+}
+
+enum ErrorCode {
+    UnknownHashFunction
+}
+
+struct Hash {
+    dest: char[],
+    size: int,
+    md_ctx: unsigned,
+    constructor(md_ctx: unsigned),
+    feed(data: char[], len: int) : Hash,
+    feed(data: char[]) : Hash,
+    final() : Hash,
+    hexdigest(): str.Str,
+    finalizer(),
+    static sha256() : Hash,
+    static sha512() : Hash,
+    static md5() : Hash,
+    static digestByName(name: str.Str) : lang.Result<Hash, ErrorCode>
+}
+
+impl Hash {
+    constructor(md_ctx: unsigned) {
+        this.dest = new char[64]()
+        this.md_ctx = md_ctx
+    },
+    feed(data: char[], len: int) : Hash {
+        imports.EVP_DigestUpdate(this.md_ctx, runtime.runtime_get_string_array_data_pointer(data), len)
+        return this
+    },
+    feed(data: char[]) : Hash {
+        imports.EVP_DigestUpdate(this.md_ctx, runtime.runtime_get_string_array_data_pointer(data), data.length)
+        return this
+    },
+    final() : Hash {
+        // trick here, to pass a pointer to the length 
+        let len = unsigned[1](0)
+        imports.EVP_DigestFinal_ex(this.md_ctx, runtime.runtime_get_string_array_data_pointer(this.dest), runtime.runtime_get_string_array_data_pointer(len))
+        this.size = len[0]
+        return this
+    },
+    hexdigest(): str.Str {
+        let hex = str.Str(this.size as unsigned * 2u + 1u)
+        for (let i = 0; i < this.size; i += 1) {
+            let byte = this.dest[i]
+            hex.push(inttohex(byte >> 4))
+            hex.push(inttohex(byte & 0x0F))
+        }
+        return hex
+    },
+    finalizer() {
+        imports.EVP_MD_CTX_free(this.md_ctx)
+    },
+    static sha256() : Hash {
+        let md_ctx = imports.EVP_MD_CTX_new()
+        imports.EVP_DigestInit_ex(md_ctx, imports.EVP_sha256(), 0)
+        return Hash(md_ctx)
+    },
+    static sha512() : Hash {
+        let md_ctx = imports.EVP_MD_CTX_new()
+        imports.EVP_DigestInit_ex(md_ctx, imports.EVP_sha512(), 0)
+        return Hash(md_ctx)
+    },
+    static md5() : Hash {
+        let md_ctx = imports.EVP_MD_CTX_new()
+        imports.EVP_DigestInit_ex(md_ctx, imports.EVP_md5(), 0)
+        return Hash(md_ctx)
+    },
+    static digestByName(name: str.Str) : lang.Result<Hash, ErrorCode> {
+        let md_ctx = imports.EVP_MD_CTX_new()
+        let md = imports.EVP_get_digestbyname(runtime.runtime_get_string_array_data_pointer(name))
+        if (md == 0) {
+            return lang.Result<Hash, ErrorCode>.err(ErrorCode.UnknownHashFunction)
+        }
+        imports.EVP_DigestInit_ex(md_ctx, md, 0)
+        return lang.Result<Hash, ErrorCode>.ok(Hash(md_ctx))
+    }
+}
+
+struct HMAC {
+    dest: char[],
+    size: int,
+    md_ctx: unsigned,
+    key: char[],
+    key_length: int,
+    constructor(md_ctx: unsigned, key: char[], key_length: int),
+    feed(data: char[], len: int) : HMAC,
+    feed(data: char[]) : HMAC,
+    final() : HMAC,
+    hexdigest(): str.Str,
+    finalizer(),
+    static sha256(key: char[], key_length: int) : HMAC,
+    static sha512(key: char[], key_length: int) : HMAC,
+    static md5(key: char[], key_length: int) : HMAC,
+    static digestByName(name: str.Str, key: char[], key_length: int) : lang.Result<HMAC, ErrorCode>
+}
+
+impl HMAC {
+    constructor(md_ctx: unsigned, key: char[], key_length: int) {
+        this.dest = new char[64]()
+        this.md_ctx = md_ctx
+        this.key = key
+        this.key_length = key_length
+    },
+    feed(data: char[], len: int) : HMAC {
+        imports.HMAC_Update(this.md_ctx, runtime.runtime_get_string_array_data_pointer(data), len)
+        return this
+    },
+    feed(data: char[]) : HMAC {
+        imports.HMAC_Update(this.md_ctx, runtime.runtime_get_string_array_data_pointer(data), data.length)
+        return this
+    },
+    final() : HMAC {
+        // trick here, to pass a pointer to the length 
+        let len = unsigned[1](0)
+        imports.HMAC_Final(this.md_ctx, runtime.runtime_get_string_array_data_pointer(this.dest), runtime.runtime_get_string_array_data_pointer(len))
+        this.size = len[0]
+        return this
+    },
+    hexdigest(): str.Str {
+        let hex = str.Str(this.size as unsigned * 2u)
+        for (let i = 0; i < this.size; i += 1) {
+            let byte = this.dest[i]
+            hex.push(inttohex(byte >> 4))
+            hex.push(inttohex(byte & 0x0F))
+        }
+        return hex
+    },
+    finalizer() {
+        imports.HMAC_CTX_free(this.md_ctx)
+    },
+    static sha256(key: char[], key_length: int) : HMAC {
+        let md_ctx = imports.HMAC_CTX_new()
+        imports.HMAC_Init_ex(md_ctx, runtime.runtime_get_string_array_data_pointer(key), key_length, imports.EVP_sha256(), 0)
+        return HMAC(md_ctx, key, key_length)
+    },
+    static sha512(key: char[], key_length: int) : HMAC {
+        let md_ctx = imports.HMAC_CTX_new()
+        imports.HMAC_Init_ex(md_ctx, runtime.runtime_get_string_array_data_pointer(key), key_length, imports.EVP_sha512(), 0)
+        return HMAC(md_ctx, key, key_length)
+    },
+    static md5(key: char[], key_length: int) : HMAC {
+        let md_ctx = imports.HMAC_CTX_new()
+        imports.HMAC_Init_ex(md_ctx, runtime.runtime_get_string_array_data_pointer(key), key_length, imports.EVP_md5(), 0)
+        return HMAC(md_ctx, key, key_length)
+    },
+    static digestByName(name: str.Str, key: char[], key_length: int) : lang.Result<HMAC, ErrorCode> {
+        let md_ctx = imports.HMAC_CTX_new()
+        let md = imports.EVP_get_digestbyname(runtime.runtime_get_string_array_data_pointer(name))
+        if (md == 0) {
+            return lang.Result<HMAC, ErrorCode>.err(ErrorCode.UnknownHashFunction)
+        }
+        imports.HMAC_Init_ex(md_ctx, runtime.runtime_get_string_array_data_pointer(key), key_length, md, 0)
+        return lang.Result<HMAC, ErrorCode>.ok(HMAC(md_ctx, key, key_length))
+    }
+}

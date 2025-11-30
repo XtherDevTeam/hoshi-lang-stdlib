@@ -1,0 +1,153 @@
+use str "str"
+use json "json"
+use base64 "base64"
+use lang "builtin"
+use hashMap "hashMap"
+use hash "crypto/hash"
+
+enum ErrorCode {
+    INVALID_TOKEN
+}
+
+interface JWTHashAlgorithm {
+    /**
+     * Get the name of the algorithm.
+     * @return The name of the algorithm.
+     */
+    algName() : str.Str,
+    /**
+     * Hash the given data and return the result in base64 using the algorithm.
+     * @param data The data to be hashed.
+     * @return The hashed data in base64.
+     */
+    hash(data : str.Str) : str.Str
+}
+
+struct NoneHashAlgorithm {
+    constructor()
+}
+
+impl NoneHashAlgorithm {
+    constructor() {
+        return this
+    }
+}
+
+impl NoneHashAlgorithm : JWTHashAlgorithm {
+    algName() : str.Str {
+        return "none"
+    },
+    hash(data : str.Str) : str.Str {
+        return ""
+    }
+}
+
+struct HMACSHA256 {
+    key: str.Str,
+    constructor(key : str.Str)
+}
+
+impl HMACSHA256 {
+    constructor(key : str.Str) {
+        this.key = key
+    }
+}
+
+impl HMACSHA256 : JWTHashAlgorithm {
+    algName() : str.Str {
+        return "HS256"
+    },
+    hash(data : str.Str) : str.Str {
+        let h = hash.HMAC.sha256(this.key.data, this.key.length).feed(data.data, data.length).final()
+        return base64.encodeURI(h.dest, h.size)
+    }
+}
+
+struct JWT {
+    headers: str.Str,
+    payload: str.Str,
+    signature: str.Str,
+    constructor(headers : str.Str, payload : str.Str, signature : str.Str)
+}
+
+impl JWT {
+    constructor(headers : str.Str, payload : str.Str, signature : str.Str) {
+        this.headers = headers
+        this.payload = payload
+        this.signature = signature
+    }
+}
+
+impl JWT : str.Stringable {
+    to_string() : str.Str {
+        return str.format("{}.{}.{}", this.headers, this.payload, this.signature)
+    }
+}
+
+func parse(token : str.Str) : lang.Result<JWT, ErrorCode> {
+    let parts = token.split(".")
+    if (parts.length != 3) {
+        return lang.Result<JWT, ErrorCode>.err(ErrorCode.INVALID_TOKEN)
+    }
+    return lang.Result<JWT, ErrorCode>.ok(JWT(parts[0], parts[1], parts[2]))
+}
+
+struct JWTBuilder {
+    typ: str.Str,
+    alg: JWTHashAlgorithm,
+    payload: json.JSONDict,
+    constructor(alg : JWTHashAlgorithm, payload : json.JSONDict),
+    constructor(alg : JWTHashAlgorithm),
+    add_claim(name : str.Str, value : json.JSONValue) : JWTBuilder,
+    yield() : JWT
+}
+
+impl JWTBuilder {
+    constructor(alg : JWTHashAlgorithm, payload : json.JSONDict) {
+        this.typ = "JWT"
+        this.alg = alg
+        this.payload = payload
+    },
+    constructor(alg : JWTHashAlgorithm) {
+        this.typ = "JWT"
+        this.alg = alg
+        this.payload = json.JSONDict()
+    },
+    add_claim(name : str.Str, value : json.JSONValue) : JWTBuilder {
+        this.payload[name] = value
+        return this
+    },
+    yield() : JWT {
+        let headers = json.JSONDict().put("typ", this.typ).put("alg", this.alg.algName())
+        let headers_str = base64.encodeURI(json.JSONValue(headers).to_string())
+        let payload_str = base64.encodeURI(json.JSONValue(this.payload).to_string())
+        let signing_input = str.format("{}.{}", headers_str, payload_str)
+        let signature = this.alg.hash(signing_input)
+        return JWT(headers_str, payload_str, signature)
+    }
+}
+
+func validate(token: JWT, alg: JWTHashAlgorithm) : bool {
+    let signing_input = str.format("{}.{}", token.headers, token.payload)
+    let parsed_json = json.parse(base64.decodeURI(token.headers))
+    if (parsed_json.is_err()) {
+        return false
+    }
+    if (parsed_json.unwrap() interfaceof json.JSONDict == false) {
+        return false
+    }
+    let casted = dyn_cast<json.JSONDict>(parsed_json.unwrap())
+    if (casted.contains("typ") == false || casted.contains("alg") == false) {
+        return false
+    }
+    if (casted["typ"] interfaceof str.Str == false || casted["alg"] interfaceof str.Str == false) {
+        return false
+    }
+    let alg_name = dyn_cast<str.Str>(casted["alg"])
+    if (alg.algName() != alg_name) {
+        return false
+    }
+    let signature = token.signature
+    let expected_signature = alg.hash(signing_input)
+    return signature == expected_signature
+}

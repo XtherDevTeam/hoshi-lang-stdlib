@@ -1,0 +1,18 @@
+use jwt "jwt"
+use str "str"
+use console "console"
+
+func main() : int {
+    let token = jwt.JWTBuilder(jwt.HMACSHA256("secret"))
+        .add_claim("name", str.Str("Jerry Chou"))
+        .yield()
+    
+    console.print(token, "\n")
+
+    if (jwt.validate(token, jwt.HMACSHA256("secret"))) {
+        console.print("Token is valid\n")
+    } else {
+        console.print("Token is invalid\n")
+    }
+    return 0
+}

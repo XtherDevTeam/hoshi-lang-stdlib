@@ -1,0 +1,14 @@
+use crypto "crypto"
+use str "str"
+use console "console"
+
+func main() : int {
+    console.print("crypto-library-validation: start\n")
+    let message : str.Str = "Hello, world!"
+    let key : str.Str = "secret"
+    let encrypted : str.Str = crypto.hash.HMAC.sha256(key.data, key.length).feed(message.data, message.length).final().hexdigest()
+    console.print("encrypted message: ", encrypted, "\n")
+    let md5 : str.Str = crypto.hash.Hash.md5().feed(message.data, message.length).final().hexdigest()
+    console.print("md5: " + md5 + "\n")
+    return 0
+}

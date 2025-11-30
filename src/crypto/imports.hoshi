@@ -1,0 +1,41 @@
+import EVP_MD_CTX_new() : ptr from "builtin"
+import EVP_CIPHER_CTX_new() : ptr from "builtin"
+import HMAC_CTX_new() : ptr from "builtin"
+
+import EVP_MD_CTX_free(ctx: ptr) : none from "builtin"
+import EVP_CIPHER_CTX_free(ctx: ptr) : none from "builtin"
+import HMAC_CTX_free(ctx: ptr) : none from "builtin"
+
+import EVP_DigestInit_ex(ctx: ptr, type: ptr, engine_impl: ptr) : int32 from "builtin"
+import EVP_DigestUpdate(ctx: ptr, data: ptr, data_len: unsigned) : int32 from "builtin"
+import EVP_DigestFinal_ex(ctx: ptr, md: ptr, s: ptr) : int32 from "builtin"
+
+import EVP_CipherInit_ex(ctx: ptr, type: ptr, engine_impl: ptr, key: ptr, iv: ptr, enc: int32) : int32 from "builtin"
+import EVP_CipherUpdate(ctx: ptr, outl: ptr, input: ptr, inl: int32) : int32 from "builtin"
+import EVP_CipherFinal_ex(ctx: ptr, outl: ptr) : int32 from "builtin"
+
+import HMAC_Init_ex(ctx: ptr, key: ptr, len: int32, type: ptr, engine_impl: ptr) : int32 from "builtin"
+import HMAC_Update(ctx: ptr, data: ptr, len: int32) : int32 from "builtin"
+import HMAC_Final(ctx: ptr, md: ptr, s: ptr) : int32 from "builtin"
+
+import EVP_sha256() : ptr from "builtin"
+import EVP_md5() : ptr from "builtin"
+import EVP_sha224() : ptr from "builtin"
+import EVP_sha384() : ptr from "builtin"
+import EVP_sha512() : ptr from "builtin"
+import EVP_sha512_224() : ptr from "builtin"
+import EVP_sha512_256() : ptr from "builtin"
+
+import EVP_aes_256_cbc() : ptr from "builtin"
+import EVP_aes_128_gcm() : ptr from "builtin"
+
+import EVP_sha3_224() : ptr from "builtin"
+import EVP_sha3_256() : ptr from "builtin"
+import EVP_sha3_384() : ptr from "builtin"
+import EVP_sha3_512() : ptr from "builtin"
+import EVP_shake128() : ptr from "builtin"
+import EVP_shake256() : ptr from "builtin"
+
+import EVP_sha1() : ptr from "builtin"
+
+import EVP_get_digestbyname(name: ptr) : ptr from "builtin"
