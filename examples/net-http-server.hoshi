@@ -63,12 +63,17 @@ func file_test(req: kiana.request.Request) : kiana.response.Response {
     )
 }
 
+func error_route() : kiana.response.Response {
+    return kiana.response.Response(http.HTTPResponseHeader("HTTP/1.1", 404, "NOT FOUND", hashMap.HashMap<str.Str, str.Str>()).add_header("Content-Type", "text/plain; charset=UTF-8"), str.Str("页面被 Kiana 吃掉了喵～"))
+}
+
 func main() : int {
     console.print("net-http-server: start\n")
     let app = kiana.application.Application(kiana.application.ApplicationConfig("0.0.0.0", 9003))
     app.use_route("/", func root)
     app.use_route("/json", func json_test)
     app.use_route("/file", func file_test)
+    app.use_error_endpoint(404, func error_route)
     let rc = app.serve()
     console.print("net-http-server: exit with code", rc as int, "\n")
     return 0

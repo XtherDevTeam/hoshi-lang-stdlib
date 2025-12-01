@@ -8,6 +8,8 @@ use legacyBackend "backends/legacy"
 use threadBackend "backends/thread"
 use signal "signal"
 use logger "logger"
+use vec "vec"
+use lang "builtin"
 
 enum ResultCode {
     SUCCESS,
@@ -17,12 +19,21 @@ enum ResultCode {
     HOSTNAME_RESOLUTION_FAIL,
 }
 
+alias BeforeRequestHook = func(request.Request) : lang.Result<request.Request, response.Response>
+alias AfterRequestHook = func(response.Response) : lang.Result<response.Response, response.Response>
+
 struct ApplicationConfig {
     host: str.Str,
     port: short,
     route: hashMap.HashMap<str.Str, func(request.Request) : response.Response>,
+    before_requests: vec.Vec<BeforeRequestHook>,
+    after_requests: vec.Vec<AfterRequestHook>,
+    error_endpoints: hashMap.HashMap<int, func() : response.Response>,
     constructor(host: str.Str, port: short),
-    add_route(path: str.Str, handler: func(request.Request) : response.Response) : ApplicationConfig
+    add_route(path: str.Str, handler: func(request.Request) : response.Response) : ApplicationConfig,
+    add_error_endpoint(code: int, handler: func() : response.Response) : ApplicationConfig,
+    add_before_request(hook: BeforeRequestHook) : ApplicationConfig,
+    add_after_request(hook: AfterRequestHook) : ApplicationConfig
 }
 
 impl ApplicationConfig {
@@ -30,9 +41,24 @@ impl ApplicationConfig {
         this.host = host
         this.port = port
         this.route = hashMap.HashMap<str.Str, func(request.Request) : response.Response>()
+        this.before_requests = vec.Vec<BeforeRequestHook>()
+        this.after_requests = vec.Vec<AfterRequestHook>()
+        this.error_endpoints = hashMap.HashMap<int, func() : response.Response>()
     },
     add_route(path: str.Str, handler: func(request.Request) : response.Response) : ApplicationConfig {
         this.route[path] = handler
+        return this
+    },
+    add_error_endpoint(code: int, handler: func() : response.Response) : ApplicationConfig {
+        this.error_endpoints[code] = handler
+        return this
+    },
+    add_before_request(hook: BeforeRequestHook) : ApplicationConfig {
+        this.before_requests.push(hook)
+        return this
+    },
+    add_after_request(hook: AfterRequestHook) : ApplicationConfig {
+        this.after_requests.push(hook)
         return this
     }
 }
@@ -44,10 +70,14 @@ struct Application {
     logger: logger.Logger,
     serve() : ResultCode,
     use_route(path: str.Str, handler: func(request.Request) : response.Response) : none,
+    use_before_request(hook: BeforeRequestHook) : none,
+    use_after_request(hook: AfterRequestHook) : none,
+    use_error_endpoint(code: int, handler: func() : response.Response) : none,
     constructor(config: ApplicationConfig),
     constructor(config: ApplicationConfig, backend: taskBackend.TaskBackend),
     constructor(config: ApplicationConfig, backend: taskBackend.TaskBackend, logger: logger.Logger),
-    static handler(app: Application, client: socket.Socket) : response.Response
+    static handler(app: Application, client: socket.Socket) : response.Response,
+    static dispatch_error_endpoint(app: Application, code: int, message: str.Str) : response.Response
 }
 
 impl Application {
@@ -65,6 +95,15 @@ impl Application {
         this.config = config
         this.backend = backend
         this.logger = logger
+    },
+    use_before_request(hook: BeforeRequestHook) : none {
+        this.config.add_before_request(hook)
+    },
+    use_after_request(hook: AfterRequestHook) : none {
+        this.config.add_after_request(hook)
+    },
+    use_error_endpoint(code: int, handler: func() : response.Response) : none {
+        this.config.add_error_endpoint(code, handler)
     },
     use_route(path: str.Str, handler: func(request.Request) : response.Response) : none {
         this.config.add_route(path, handler)
@@ -117,14 +156,59 @@ impl Application {
     },
     static handler(app: Application, client: socket.Socket) : response.Response {
         let req = request.request(client)
+
+        let wrap_after_request = func [req, app] (resp: response.Response) : response.Response {
+            for (let index = this.app.config.after_requests.length - 1; index >= 0; index -= 1) {
+                let hook_result = this.app.config.after_requests[index](resp)
+                if (hook_result.is_err()) {
+                    return hook_result.unwrap_err()
+                }
+                resp = hook_result.unwrap()
+            }
+            return resp
+        }
+
         if (req.is_err()) {
-            return response.Response(400, "BAD REQUEST", str.Str("Invalid request"))
+            return wrap_after_request(Application.dispatch_error_endpoint(app, 400, "Bad Request"))
         }
+
+        for (let index = 0; index < app.config.before_requests.length; index += 1) {
+            let hook_result = app.config.before_requests[index](req.unwrap())
+            if (hook_result.is_err()) {
+                return hook_result.unwrap_err()
+            }
+            req.value = hook_result.unwrap()
+        }
+
         if (app.config.route.contains(req.unwrap().target.target) == false) {
-            return response.Response(404, "NOT FOUND", str.Str("Page not found"))
+            return wrap_after_request(Application.dispatch_error_endpoint(app, 404, "Not Found"))
         }
+
         app.logger.info(str.format("Serving request for endpoint {}", req.unwrap().target.target))
+        
         let handle = app.config.route[req.unwrap().target.target]
-        return handle(req.unwrap())
+        let resp = handle(req.unwrap())
+
+        return wrap_after_request(resp)
+    },
+    static dispatch_error_endpoint(app: Application, code: int, message: str.Str) : response.Response {
+        if (app.config.error_endpoints.contains(code) == false) {
+            let resp = response.Response(code, message, str.format("
+                <html>
+                <head>
+                <title>{} {}</title>
+                </head>
+                <body>
+                <h1>{} {}</h1>
+                <p>An error occurred when processing your request</p>
+                <p>Server: hoshi-std-kiana</p>
+                </body>
+                </html>
+                ", code, message, code, message))
+            resp.headers.add_header("Content-Type", "text/html; charset=utf-8")
+            return resp
+        }
+        let handle = app.config.error_endpoints[code]
+        return handle()
     }
 }
