@@ -14,12 +14,10 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <netinet/in.h>
 #include <openssl/crypto.h>
 #include <openssl/err.h>
 #include <openssl/rand.h>
 #include <openssl/ssl.h>
-#include <unistd.h>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -41,7 +39,7 @@ struct __WSAINIT {
 #define inet_aton(a, b) inet_pton(AF_INET, (a), (b))
 #define close_socket closesocket
 #else
-
+#include <unistd.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <sys/socket.h>
@@ -87,17 +85,17 @@ LIBNET_EXPORT int64_t libnet_socket_listen(int fd, int backlog = LIBNET_DEFAULT_
 
 LIBNET_EXPORT int64_t libnet_socket_accept(int fd, sockaddr_in *clientAddr, socklen_t *clientAddrLen);
 
-LIBNET_EXPORT int64_t libnet_socket_send(int fd, char *buf, u_int64_t len, int sendFlag = 0);
+LIBNET_EXPORT int64_t libnet_socket_send(int fd, char *buf, uint64_t len, int sendFlag = 0);
 
-LIBNET_EXPORT int64_t libnet_socket_recv(int fd, char *buf, u_int64_t len, int recvFlag = 0);
+LIBNET_EXPORT int64_t libnet_socket_recv(int fd, char *buf, uint64_t len, int recvFlag = 0);
 
 LIBNET_EXPORT void libnet_socket_close(int fd);
 
 LIBNET_EXPORT sslInfo *libnet_ssl_connect(int fd, const char *domain);
 
-LIBNET_EXPORT int64_t libnet_ssl_send(sslInfo *fd, char *data, u_int64_t len);
+LIBNET_EXPORT int64_t libnet_ssl_send(sslInfo *fd, char *data, uint64_t len);
 
-LIBNET_EXPORT int64_t libnet_ssl_recv(sslInfo *fd, char *dest, u_int64_t len);
+LIBNET_EXPORT int64_t libnet_ssl_recv(sslInfo *fd, char *dest, uint64_t len);
 
 LIBNET_EXPORT void libnet_ssl_close(sslInfo *fd);
 

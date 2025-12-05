@@ -70,14 +70,14 @@ LIBNET_EXPORT int64_t libnet_socket_accept(int fd, sockaddr_in *clientAddr, sock
     }
 }
 
-LIBNET_EXPORT int64_t libnet_socket_send(int fd, char *buf, u_int64_t len, int sendFlag) {
+LIBNET_EXPORT int64_t libnet_socket_send(int fd, char *buf, uint64_t len, int sendFlag) {
     if (send(fd, buf, len, sendFlag) < 0) {
         return LIBNET_SEND_FAIL;
     }
     return LIBNET_SUCCESS;
 }
 
-LIBNET_EXPORT int64_t libnet_socket_recv(int fd, char *buf, u_int64_t len, int recvFlag) {
+LIBNET_EXPORT int64_t libnet_socket_recv(int fd, char *buf, uint64_t len, int recvFlag) {
     if (auto res = recv(fd, buf, len, recvFlag); res < 0) {
         return LIBNET_RECV_FAIL;
     } else if (res == 0) {
@@ -126,14 +126,14 @@ LIBNET_EXPORT sslInfo *libnet_ssl_connect(int fd, const char *domain) {
     return r;
 }
 
-LIBNET_EXPORT int64_t libnet_ssl_send(sslInfo *fd, char *data, u_int64_t len) {
+LIBNET_EXPORT int64_t libnet_ssl_send(sslInfo *fd, char *data, uint64_t len) {
     if (SSL_write(fd->ssl, data, len) <= 0) {
         return LIBNET_SSL_SEND_FAIL;
     }
     return LIBNET_SUCCESS;
 }
 
-LIBNET_EXPORT int64_t libnet_ssl_recv(sslInfo *fd, char *dest, u_int64_t len) {
+LIBNET_EXPORT int64_t libnet_ssl_recv(sslInfo *fd, char *dest, uint64_t len) {
     if (auto res = SSL_read(fd->ssl, dest, len); res < 0) {
         return LIBNET_SSL_RECV_FAIL;
     } else if (res == 0) {

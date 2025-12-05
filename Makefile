@@ -1,7 +1,8 @@
 HOSHIC_FLAGS = ./cmake-build-debug/libstd.a ./cmake-build-debug/libcrypto.a ./cmake-build-debug/libssl.a -I src
 
 compiler-dependency:
-	cd hoshi-lang && git pull -f && make cmake_production build_production && cd ..
+	cd hoshi-lang && git submodule update --init --recursive && cd ..
+	cd hoshi-lang && git checkout llvm && git pull -f && make cmake_production build_production && cd ..
 
 cmake_debug: compiler-dependency
 	cmake . -B cmake-build-debug  -DCMAKE_EXPORT_COMPILE_COMMANDS=1 -DCMAKE_BUILD_TYPE=DEBUG -G "Unix Makefiles"
@@ -32,7 +33,12 @@ build-release/%: examples/%.hoshi cmake_production build_production
 package:
 	rm -rf build-package
 	mkdir -p build-package/bin
-	cp cmake-build-release/*hoshi* build-package/bin
-	cp cmake-build-release/*elysia* build-package/bin
-	cp -r lib build-package/lib
+	mkdir -p build-package/lib
+	cp hoshi-lang/cmake-build-release/*hoshi* build-package/bin
+	cp hoshi-lang/cmake-build-release/*elysia* build-package/bin
+	cp cmake-build-release/*crypto* build-package/bin
+	cp cmake-build-release/*ssl* build-package/bin
+	cp cmake-build-release/*std* build-package/bin
+	cp -r hoshi-lang/lib/* build-package/lib/
+	cp -r src/* build-package/lib/
 	cp LICENSE build-package/
