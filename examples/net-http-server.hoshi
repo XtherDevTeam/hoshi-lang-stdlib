@@ -8,6 +8,8 @@ use hashMap "hashMap"
 use json "json"
 use fs "fs"
 use file "file"
+use jwt "jwt"
+use time "time"
 
 func root(req: kiana.request.Request) : kiana.response.Response {
     let body = str.Str("
@@ -63,16 +65,74 @@ func file_test(req: kiana.request.Request) : kiana.response.Response {
     )
 }
 
+func jwt_cookie_set(req: kiana.request.Request) : kiana.response.Response {
+    let session = jwt.JWTBuilder(jwt.HMACSHA256("kiana"))
+        .add_claim("valkeryie", str.Str("Kiana Kaslana"))
+        .add_claim("host_time", str.Stringable(time.Date.now() + time.Duration.timezone()).to_string())
+        .yield()
+    let cookie = kiana.cookie.Cookie()
+        .put("session_token", str.Stringable(session).to_string())
+        .path("/")
+        .http_only(true)
+        .max_age(time.Duration.days(30))
+    let headers = http.HTTPResponseHeader("HTTP/1.1", 200, "OK")
+                    .set_cookie(str.Stringable(cookie).to_string())
+                    .add_header("Content-Type", "text/html; charset=UTF-8")
+    let html : str.Str = "
+        <!doctype html>
+        <html>
+            <head>
+                <title>Set JWT cookie success</title>
+            </head>
+            <body>
+                <div>Set JWT cookie success!</div>
+            </body>
+        </html>
+    "
+    return kiana.response.Response(headers, html)
+}
+
+func jwt_cookie_view(req: kiana.request.Request) : kiana.response.Response {
+    if (req.headers.headers.contains("cookie") == false) {
+        return kiana.response.Response(http.HTTPResponseHeader("HTTP/1.1", 404, "Not Found", hashMap.HashMap<str.Str, str.Str>()), str.Str("Cookie not found"))
+    }
+    let cookie = kiana.cookie.parse(req.headers.headers["cookie"])
+    let token = jwt.extract_payload(jwt.parse(cookie.get("session_token")).unwrap(), jwt.HMACSHA256("kiana"))
+    if (token.is_err()) {
+        return kiana.response.Response(http.HTTPResponseHeader("HTTP/1.1", 404, "Not Found", hashMap.HashMap<str.Str, str.Str>()), str.Str("Invalid token"))
+    }
+    let valkeryie = dyn_cast<str.Str>(token.unwrap()["valkeryie"])
+    let host_time = dyn_cast<str.Str>(token.unwrap()["host_time"])
+
+    let headers = http.HTTPResponseHeader("HTTP/1.1", 200, "OK").add_header("Content-Type", "text/html; charset=UTF-8")
+    let html : str.Str = "
+        <!doctype html>
+        <html>
+            <head>
+                <title>View JWT cookie success</title>
+            </head>
+            <body>
+                <div>View JWT cookie success!</div>
+                <div>Valkeryie: {}</div>
+                <div>Host time: {}</div>
+            </body>
+        </html>
+    "
+    return kiana.response.Response(headers, str.format(html, valkeryie, host_time))
+}
+
 func error_route() : kiana.response.Response {
     return kiana.response.Response(http.HTTPResponseHeader("HTTP/1.1", 404, "NOT FOUND", hashMap.HashMap<str.Str, str.Str>()).add_header("Content-Type", "text/plain; charset=UTF-8"), str.Str("页面被 Kiana 吃掉了喵～"))
 }
 
 func main() : int {
     console.print("net-http-server: start\n")
-    let app = kiana.application.Application(kiana.application.ApplicationConfig("0.0.0.0", 9003))
+    let app = kiana.application.Application(kiana.application.ApplicationConfig("0.0.0.0", 9002))
     app.use_route("/", func root)
     app.use_route("/json", func json_test)
     app.use_route("/file", func file_test)
+    app.use_route("/jwt/set", func jwt_cookie_set)
+    app.use_route("/jwt/view", func jwt_cookie_view)
     app.use_error_endpoint(404, func error_route)
     let rc = app.serve()
     console.print("net-http-server: exit with code", rc as int, "\n")

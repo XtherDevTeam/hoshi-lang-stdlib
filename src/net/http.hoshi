@@ -28,7 +28,8 @@ struct HTTPResponseHeader {
     constructor(version: str.Str, status_code: int, status_message: str.Str, headers: hashMap.HashMap<str.Str, str.Str>),
     constructor(version: str.Str, status_code: int, status_message: str.Str),
     to_string() : str.Str,
-    add_header(key: str.Str, value: str.Str) : HTTPResponseHeader
+    add_header(key: str.Str, value: str.Str) : HTTPResponseHeader,
+    set_cookie(section: str.Str) : HTTPResponseHeader
 }
 
 impl HTTPRequestHeader {
@@ -75,6 +76,10 @@ impl HTTPResponseHeader {
     },
     add_header(key: str.Str, value: str.Str) : HTTPResponseHeader {
         this.headers[key.lowercase()] = value
+        return this
+    },
+    set_cookie(section: str.Str) : HTTPResponseHeader {
+        this.headers["set-cookie"] = section
         return this
     }
 }

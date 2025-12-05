@@ -6,7 +6,8 @@ use hashMap "hashMap"
 use hash "crypto/hash"
 
 enum ErrorCode {
-    INVALID_TOKEN
+    INVALID_TOKEN,
+    VALIDATION_FAILED
 }
 
 interface JWTHashAlgorithm {
@@ -150,4 +151,19 @@ func validate(token: JWT, alg: JWTHashAlgorithm) : bool {
     let signature = token.signature
     let expected_signature = alg.hash(signing_input)
     return signature == expected_signature
+}
+
+func extract_payload(token: JWT, alg: JWTHashAlgorithm) : lang.Result<json.JSONDict, ErrorCode> {
+    if (validate(token, alg) == false) {
+        return lang.Result<json.JSONDict, ErrorCode>.err(ErrorCode.VALIDATION_FAILED)
+    }
+
+    let parsed_json = json.parse(base64.decodeURI(token.payload))
+    if (parsed_json.is_err()) {
+        return lang.Result<json.JSONDict, ErrorCode>.err(ErrorCode.INVALID_TOKEN)
+    }
+    if (parsed_json.unwrap() interfaceof json.JSONDict == false) {
+        return lang.Result<json.JSONDict, ErrorCode>.err(ErrorCode.INVALID_TOKEN)
+    }
+    return lang.Result<json.JSONDict, ErrorCode>.ok(dyn_cast<json.JSONDict>(parsed_json.unwrap()))
 }
