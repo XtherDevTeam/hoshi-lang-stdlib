@@ -41,20 +41,20 @@ func root(req: kiana.request.Request) : kiana.response.Response {
             </style>
         </html>
     ")
-    let headers = http.HTTPResponseHeader("HTTP/1.1", 200, "OK", hashMap.HashMap<str.Str, str.Str>())
+    let headers = http.HTTPResponseHeader("HTTP/1.1", 200, "OK")
                         .add_header("Content-Type", "text/html; charset=UTF-8")
     return kiana.response.Response(headers, body)
 }
 
 func json_test(req: kiana.request.Request) : kiana.response.Response {
     let body = json.parse("{\"a\": \"Hello, world!\", \"b\": [1, 2, 3], \"c\": null}").unwrap()
-    return kiana.response.Response(http.HTTPResponseHeader("HTTP/1.1", 200, "OK", hashMap.HashMap<str.Str, str.Str>()), body)
+    return kiana.response.Response(http.HTTPResponseHeader("HTTP/1.1", 200, "OK"), body)
 }
 
 func file_test(req: kiana.request.Request) : kiana.response.Response {
     let f = fs.open("/Users/chou/Downloads/The Graduation Trip.7z", "rb")
     if (f.is_err()) {
-        return kiana.response.Response(http.HTTPResponseHeader("HTTP/1.1", 404, "Not Found", hashMap.HashMap<str.Str, str.Str>()), str.Str("File not found"))
+        return kiana.response.Response(http.HTTPResponseHeader("HTTP/1.1", 404, "Not Found"), str.Str("File not found"))
     }
     let fi = f.unwrap() as file.AbstractFile
     return kiana.response.Response(
@@ -122,7 +122,7 @@ func jwt_cookie_view(req: kiana.request.Request) : kiana.response.Response {
 }
 
 func error_route() : kiana.response.Response {
-    return kiana.response.Response(http.HTTPResponseHeader("HTTP/1.1", 404, "NOT FOUND", hashMap.HashMap<str.Str, str.Str>()).add_header("Content-Type", "text/plain; charset=UTF-8"), str.Str("页面被 Kiana 吃掉了喵～"))
+    return kiana.response.Response(http.HTTPResponseHeader("HTTP/1.1", 404, "NOT FOUND").add_header("Content-Type", "text/plain; charset=UTF-8"), str.Str("页面被 Kiana 吃掉了喵～"))
 }
 
 func main() : int {
