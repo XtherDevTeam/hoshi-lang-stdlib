@@ -22,8 +22,6 @@
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#pragma comment(lib, "libeay32.lib")
-#pragma comment(lib, "ssleay32.lib")
 
 struct __WSAINIT {
     __WSAINIT() {
