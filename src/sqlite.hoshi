@@ -4,6 +4,7 @@ use hashMap "hashMap"
 use str "str"
 use vec "vec"
 use runtime "runtime"
+use threading "threading"
 
 import sqlite3_open(filename: ptr, ppDb: ptr) : int32 from "builtin"
 import sqlite3_close(db: unsigned) : int32 from "builtin"
@@ -281,4 +282,76 @@ func open(uri: str.Str) : lang.Result<Database, ResultCode> {
         return lang.Result<Database, ResultCode>.err(rc)
     }
     return lang.Result<Database, ResultCode>.ok(Database(handle[0]))
+}
+
+struct DatabaseConnection {
+    db: Database,
+    next: DatabaseConnection,
+    constructor(db: Database, next: DatabaseConnection),
+    constructor(db: Database)
+}
+
+impl DatabaseConnection {
+    constructor(db: Database, next: DatabaseConnection) {
+        this.db = db
+        this.next = next
+    },
+    constructor(db: Database) {
+        this.db = db
+    }
+}
+
+struct DatabaseConnectionPool {
+    uri: str.Str,
+    connections: DatabaseConnection,
+    lock: threading.Mutex,
+    is_empty: threading.Condition,
+    max_connections: int,
+    current_connections: int,
+    constructor(uri: str.Str),
+    get(): lang.Result<Database, ResultCode>,
+    release(db: Database) : none
+}
+
+impl DatabaseConnectionPool {
+    constructor(uri: str.Str) {
+        this.uri = uri
+        this.lock = threading.Mutex()
+        this.is_empty = threading.Condition(this.lock)
+        this.max_connections = 64
+        this.current_connections = 0
+    },
+    get(): lang.Result<Database, ResultCode> {
+        if (this.current_connections < this.max_connections) {
+            let db = open(this.uri)
+            if (db.is_err()) {
+                return lang.Result<Database, ResultCode>.err(db.unwrap_err())
+            }
+            let conn = DatabaseConnection(db.unwrap())
+            if (this.connections == null) {
+                this.connections = conn
+                return lang.Result<Database, ResultCode>.ok(db.unwrap())
+            } else {
+                conn.next = this.connections
+                this.connections = conn
+                return lang.Result<Database, ResultCode>.ok(db.unwrap())
+            }
+        } else {
+            this.lock.lock()
+            if (this.connections == null) {
+                this.is_empty.wait()
+            }
+            let res = this.connections.db
+            this.connections = this.connections.next
+            this.lock.unlock()
+            return lang.Result<Database, ResultCode>.ok(res)
+        }
+    },
+    release(db: Database) : none {
+        this.lock.lock()
+        let node = DatabaseConnection(db, this.connections)
+        this.connections = node
+        this.is_empty.signal()
+        this.lock.unlock()
+    }
 }

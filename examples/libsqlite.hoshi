@@ -5,8 +5,9 @@ use zip "zip"
 use sqlite "sqlite"
 
 func main() : int {
+    let conns = sqlite.DatabaseConnectionPool("test.db")
     console.print("sqlite-validation: start\n")
-    let db = sqlite.open("test.db").unwrap()
+    let db = conns.get().unwrap()
     console.print("sqlite-validation: open db passed\n")
     let stmt = db.execute_batch(
         "
@@ -25,7 +26,9 @@ func main() : int {
         );
         insert into config (serverId) values ('YoimiyaGaTaisukidesu');
         ").unwrap()
+    conns.release(db)
     console.print("sqlite-validation: create table passed\n")
+    db = conns.get().unwrap()
     let query = db.execute("select * from config where port = ?", 11453).unwrap()
     console.print("sqlite-validation: execute query passed\n")
     let row = query.fetch().unwrap()
@@ -38,6 +41,7 @@ func main() : int {
             console.print("sqlite-validation: value: ", dyn_cast<str.Str>(row[keys[i]]), "\n")
         }
     }
+    conns.release(db)
     console.print("sqlite-validation: fetch row passed\n")
     return 0
 }
