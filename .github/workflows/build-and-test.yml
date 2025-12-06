@@ -86,7 +86,7 @@ jobs:
           echo "OPENSSL_ROOT_DIR=$opensslPath" >> $env:GITHUB_ENV
           echo "OPENSSL_CONF=$opensslPath\bin\openssl.cfg" >> $env:GITHUB_ENV
           echo "$opensslPath\bin" >> $env:GITHUB_PATH
-          Copy-Item -Path "$opensslPath\lib\VC\x64\MT\*.lib" -Destination "$opensslPath\lib" -Recurse
+          Copy-Item -Path "$opensslPath\lib\VC\x64\MD\*.lib" -Destination "$opensslPath\lib" -Recurse
           dir $opensslPath
           dir $opensslPath\bin
           dir $opensslPath\lib
