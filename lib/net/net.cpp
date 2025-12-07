@@ -31,6 +31,9 @@ LIBNET_EXPORT int64_t libnet_socket(int64_t *result) {
     if (int rc = ::socket(AF_INET, SOCK_STREAM, 0); rc < 0) {
         return rc;
     } else {
+        #ifdef LIBNET_DEBUG
+        printf("libnet_socket(): created socket %d\n", rc);
+        #endif
         *result = rc;
         return 0;
     }
@@ -88,6 +91,9 @@ LIBNET_EXPORT int64_t libnet_socket_recv(int fd, char *buf, uint64_t len, int re
 }
 
 LIBNET_EXPORT void libnet_socket_close(int fd) {
+    #ifdef LIBNET_DEBUG
+    printf("libnet_socket_close(): closing socket %d\n", fd);
+    #endif
     close_socket(fd);
 }
 
@@ -144,10 +150,17 @@ LIBNET_EXPORT int64_t libnet_ssl_recv(sslInfo *fd, char *dest, uint64_t len) {
 }
 
 LIBNET_EXPORT void libnet_ssl_close(sslInfo *fd) {
+    #ifdef LIBNET_DEBUG
+    printf("libnet_ssl_close(): closing ssl connection %d\n", fd->fd);
+    #endif
     SSL_CTX_free(fd->ctx);
     SSL_shutdown(fd->ssl);
     SSL_free(fd->ssl);
+    #ifdef LIBNET_DEBUG
+    printf("libnet_ssl_close(): closing socket %d\n", fd->fd);
+    #endif
     close_socket(fd->fd);
+    free(fd);
 }
 
 LIBNET_EXPORT int64_t libnet_socket_listen(int fd, int backlog) {

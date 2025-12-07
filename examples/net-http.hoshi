@@ -5,7 +5,7 @@ use runtime "runtime"
 
 func main() : int {
     console.print("net-http-validation: start\n")
-    let request = net.http.open("GET", "https://xiaokang00010.top/")
+    let request = net.http.open("GET", "https://www.github.com/")
     if (request.is_err()) {
         console.print("net-http-validation: error opening request\n")
         return 1
@@ -26,7 +26,7 @@ func main() : int {
     console.print(resp.unwrap().header, "\n")
     let body = resp.unwrap().recv_text()
     if (body.is_err()) {
-        console.print("net-http-validation: error receiving response body\n")
+        console.print("net-http-validation: error receiving response body: ", body.unwrap_err() as int, "\n")
         return 1
     }
     console.print("net-http-validation: received response body successfully\n")

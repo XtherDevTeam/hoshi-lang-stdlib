@@ -184,10 +184,6 @@ impl SSLSocket {
             libnet_ssl_close(this.ssl_fd)
             this.ssl_fd = 0
         }
-        if (this.fd > 0) {
-            libnet_socket_close(this.fd)
-            this.fd = 0
-        }
     },
     connect(addr: str.Str, port: short) : ResultCode {
         let rc = libnet_socket_connect(this.fd, runtime.runtime_get_string_array_data_pointer(addr.data), port)

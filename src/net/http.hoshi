@@ -9,6 +9,7 @@ use file "file"
 use socket "socket"
 use uri "uri"
 use random "random"
+use console "console"
 
 struct HTTPRequestHeader {
     method: str.Str,
@@ -202,6 +203,7 @@ enum HTTPNetworkError {
     CONNECTION_RESET,
     CONNECTION_TIMEOUT,
     INVALID_HTTP_RESPONSE,
+    TOO_MANY_REDIRECTS,
     UNKNOWN_ERROR
 }
 
@@ -401,6 +403,7 @@ struct HTTPRequest {
     constructor(resource: uri.URL, header: HTTPRequestHeader, body: HTTPRequestBody),
     constructor(resource: uri.URL, header: HTTPRequestHeader),
     send() : lang.Result<HTTPResponse, HTTPNetworkError>,
+    send(max_redirects: int) : lang.Result<HTTPResponse, HTTPNetworkError>,
     set_body(body: HTTPRequestBody) : HTTPRequest,
     set_header(key: str.Str, value: str.Str) : HTTPRequest,
     patch_header() : HTTPRequest,
@@ -435,37 +438,112 @@ impl HTTPRequest {
         }
         return this
     },
-    send() : lang.Result<HTTPResponse, HTTPNetworkError> {
-        let host = socket.resolve_name(this.resource.host)
-        if (host.is_err()) {
-            return lang.Result<HTTPResponse, HTTPNetworkError>.err(HTTPNetworkError.NAME_NOT_RESOLVED)
-        }
-        if (this.resource.protocol == "https") {
-            let result = socket.ssl_socket()
-            if (result.is_err()) {
-                return lang.Result<HTTPResponse, HTTPNetworkError>.err(HTTPNetworkError.CONNECTION_REFUSED)
-            }
-            this.socket = result.unwrap()
-        } elif (this.resource.protocol == "http") {
-            let result = socket.socket()
-            if (result.is_err()) {
-                return lang.Result<HTTPResponse, HTTPNetworkError>.err(HTTPNetworkError.CONNECTION_REFUSED)
-            }
-            this.socket = result.unwrap()
-        } else {
-            return lang.Result<HTTPResponse, HTTPNetworkError>.err(HTTPNetworkError.UNKNOWN_PROTOCOL)
-        }
-        if (this.socket.connect(host.unwrap(), this.resource.port) != 0) {
-            return lang.Result<HTTPResponse, HTTPNetworkError>.err(HTTPNetworkError.CONNECTION_REFUSED)
-        }
+    send(max_redirects: int) : lang.Result<HTTPResponse, HTTPNetworkError> {
+        let redirect_count = 0
 
-        this.patch_header()
-        let head = this.header.to_string()
-        this.socket.send(head.data, head.length)
-        if (this.body != null) {
-            this.body.write_to(this.socket)
+        while (true) {
+            // 1. Resolve Host
+            let host = socket.resolve_name(this.resource.host)
+            if (host.is_err()) {
+                return lang.Result<HTTPResponse, HTTPNetworkError>.err(HTTPNetworkError.NAME_NOT_RESOLVED)
+            }
+
+            // 2. Create Socket
+            if (this.resource.protocol == "https") {
+                let result = socket.ssl_socket()
+                if (result.is_err()) {
+                    return lang.Result<HTTPResponse, HTTPNetworkError>.err(HTTPNetworkError.CONNECTION_REFUSED)
+                }
+                this.socket = result.unwrap()
+            } elif (this.resource.protocol == "http") {
+                let result = socket.socket()
+                if (result.is_err()) {
+                    return lang.Result<HTTPResponse, HTTPNetworkError>.err(HTTPNetworkError.CONNECTION_REFUSED)
+                }
+                this.socket = result.unwrap()
+            } else {
+                return lang.Result<HTTPResponse, HTTPNetworkError>.err(HTTPNetworkError.UNKNOWN_PROTOCOL)
+            }
+
+            // 3. Connect
+            if (this.socket.connect(host.unwrap(), this.resource.port) != 0) {
+                return lang.Result<HTTPResponse, HTTPNetworkError>.err(HTTPNetworkError.CONNECTION_REFUSED)
+            }
+
+            // 4. Update Headers for potential new location
+            if (this.header.headers.contains("host")) {
+                // Update host header if it exists (crucial for redirects)
+                this.header.headers["host"] = this.resource.host
+            }
+            this.patch_header()
+
+            // 5. Send Request
+            let head = this.header.to_string()
+            this.socket.send(head.data, head.length)
+            if (this.body != null) {
+                this.body.write_to(this.socket)
+            }
+
+            // 6. Receive Header
+            let response_result = HTTPResponse(this.resource, this.socket).recv_header()
+            if (response_result.is_err()) {
+                return response_result
+            }
+
+            let response = response_result.unwrap()
+            let status = response.header.status_code
+
+            if (status >= 300 && status < 400 && response.header.headers.contains("location")) {
+                redirect_count += 1
+                if (redirect_count > max_redirects) {
+                    return lang.Result<HTTPResponse, HTTPNetworkError>.err(HTTPNetworkError.TOO_MANY_REDIRECTS) // Too many redirects
+                }
+
+                let location = response.header.headers["location"]
+                
+                // Close current socket before reconnecting
+                this.socket.close()
+
+                // Determine if Location is Absolute or Relative
+                if (location.startswith("http://") || location.startswith("https://")) {
+                    let new_url = uri.parseURL(location)
+                    if (new_url.is_err()) {
+                        return lang.Result<HTTPResponse, HTTPNetworkError>.err(HTTPNetworkError.INVALID_URI)
+                    }
+                    this.resource = new_url.unwrap()
+                } else {
+                    // Relative URL: Update target only
+                    this.resource.target = location
+                }
+                
+                // Update the request header target string (e.g., "GET /new-path HTTP/1.1")
+                this.header.target = this.resource.target
+
+                // Handle Method Switching (301, 302, 303 -> change POST to GET)
+                if (status == 301 || status == 302 || status == 303) {
+                    this.header.method = "GET"
+                    this.body = null
+                    // Remove body-specific headers
+                    if (this.header.headers.contains("content-length")) {
+                        this.header.headers.remove("content-length")
+                    }
+                    if (this.header.headers.contains("content-type")) {
+                        this.header.headers.remove("content-type")
+                    }
+                }
+
+                // Continue loop to re-connect to new location
+                continue 
+            }
+
+            // Not a redirect, return the response
+            return lang.Result<HTTPResponse, HTTPNetworkError>.ok(response)
         }
-        return HTTPResponse(this.resource, this.socket).recv_header()
+        
+        return lang.Result<HTTPResponse, HTTPNetworkError>.err(HTTPNetworkError.UNKNOWN_ERROR)
+    },
+    send() : lang.Result<HTTPResponse, HTTPNetworkError> {
+        return this.send(10)
     },
     set_body(body: HTTPRequestBody) : HTTPRequest {
         this.body = body
