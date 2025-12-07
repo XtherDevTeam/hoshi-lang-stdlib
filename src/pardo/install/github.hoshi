@@ -1,0 +1,136 @@
+use str "str"
+use http "net/http"
+use vec "vec"
+use json "json"
+use time "time"
+use lang "builtin"
+
+enum ResultCode {
+    NotADict,
+    MissingFields,
+    InvalidFields,
+    RequestFailed,
+    InvalidResponse,
+}
+
+enum Platform {
+    Windows,
+    Linux,
+    Darwin
+}
+
+struct ReleaseAsset {
+    name: str.Str,
+    browser_download_url: str.Str,
+    content_type: str.Str,
+    size: int,
+    digest: str.Str,
+    constructor(name: str.Str, browser_download_url: str.Str, content_type: str.Str, size: int, digest: str.Str),
+    constructor(),
+    static from_json(obj: json.JSONValue) : lang.Result<ReleaseAsset, ResultCode>
+}
+
+impl ReleaseAsset {
+    constructor(name: str.Str, browser_download_url: str.Str, content_type: str.Str, size: int, digest: str.Str) {
+        this.name = name
+        this.browser_download_url = browser_download_url
+        this.content_type = content_type
+        this.size = size
+        this.digest = digest
+    },
+    constructor() {
+        // leave it empty
+    },
+    static from_json(obj: json.JSONValue) : lang.Result<ReleaseAsset, ResultCode> {
+        if (obj interfaceof json.JSONDict == false) {
+            return lang.Result<ReleaseAsset, ResultCode>.err(ResultCode.NotADict)
+        }
+        let dict = dyn_cast<json.JSONDict>(obj)
+        if (dict.contains("name") == false || dict.contains("browser_download_url") == false || dict.contains("content_type") == false || dict.contains("size") == false || dict.contains("digest") == false) {
+            return lang.Result<ReleaseAsset, ResultCode>.err(ResultCode.MissingFields)
+        }
+        let name = dyn_cast<str.Str>(dict["name"])
+        let browser_download_url = dyn_cast<str.Str>(dict["browser_download_url"])
+        let content_type = dyn_cast<str.Str>(dict["content_type"])
+        let size = dyn_cast<json.Numeric>(dict["size"])
+        let digest = dyn_cast<str.Str>(dict["digest"])
+        if (name == null || browser_download_url == null || content_type == null || size == null || digest == null) {
+            return lang.Result<ReleaseAsset, ResultCode>.err(ResultCode.InvalidFields)
+        }
+        return lang.Result<ReleaseAsset, ResultCode>.ok(ReleaseAsset(name, browser_download_url, content_type, size.getInt(), digest))
+    }
+}
+
+struct ReleaseInfo {
+    name: str.Str,
+    tag_name: str.Str,
+    assets: vec.Vec<ReleaseAsset>,
+    constructor(name: str.Str, tag_name: str.Str, assets: vec.Vec<ReleaseAsset>),
+    constructor(),
+    static from_json(obj: json.JSONValue) : lang.Result<ReleaseInfo, ResultCode>
+}
+
+impl ReleaseInfo {
+    constructor(name: str.Str, tag_name: str.Str, assets: vec.Vec<ReleaseAsset>) {
+        this.name = name
+        this.tag_name = tag_name
+        this.assets = assets
+    },
+    constructor() {
+        // leave it empty
+    },
+    static from_json(obj: json.JSONValue) : lang.Result<ReleaseInfo, ResultCode> {
+        if (obj interfaceof json.JSONDict == false) {
+            return lang.Result<ReleaseInfo, ResultCode>.err(ResultCode.NotADict)
+        }
+        let dict = dyn_cast<json.JSONDict>(obj)
+        if (dict.contains("name") == false || dict.contains("tag_name") == false || dict.contains("assets") == false) {
+            return lang.Result<ReleaseInfo, ResultCode>.err(ResultCode.MissingFields)
+        }
+        let name = dyn_cast<str.Str>(dict["name"])
+        let tag_name = dyn_cast<str.Str>(dict["tag_name"])
+        let assets = dyn_cast<json.JSONList>(dict["assets"])
+        if (name == null || tag_name == null || assets == null) {
+            return lang.Result<ReleaseInfo, ResultCode>.err(ResultCode.InvalidFields)
+        }
+        let assets_vec = vec.Vec<ReleaseAsset>()
+        for (let i = 0;i < assets.length; i += 1) {
+            let asset_result = ReleaseAsset.from_json(assets[i])
+            if (asset_result.is_err()) {
+                return lang.Result<ReleaseInfo, ResultCode>.err(asset_result.unwrap_err())
+            }
+            assets_vec.push(asset_result.unwrap())
+        }
+        return lang.Result<ReleaseInfo, ResultCode>.ok(ReleaseInfo(name, tag_name, assets_vec))
+    }
+}
+
+func get_releases() : lang.Result<vec.Vec<ReleaseInfo>, ResultCode> {
+    [[platform == "win32"]] let platform = Platform.Windows
+    [[platform == "linux"]] let platform = Platform.Linux
+    [[platform == "darwin"]] let platform = Platform.Darwin
+    let url : str.Str = "https://api.github.com/repos/XtherDevTeam/hoshi-lang-stdlib/releases"
+    let req = http.open("GET", url)
+    if (req.is_err()) {
+        return lang.Result<vec.Vec<ReleaseInfo>, ResultCode>.err(ResultCode.RequestFailed)
+    }
+    let resp = req.unwrap().send()
+    if (resp.is_err()) {
+        return lang.Result<vec.Vec<ReleaseInfo>, ResultCode>.err(ResultCode.RequestFailed)
+    }
+    let body = resp.unwrap().recv_text()
+    let json_obj = json.parse(body.unwrap())
+    if (json_obj.is_err() || json_obj.unwrap() interfaceof json.JSONList == false) {
+        return lang.Result<vec.Vec<ReleaseInfo>, ResultCode>.err(ResultCode.InvalidResponse)
+    }
+    let json_list = dyn_cast<json.JSONList>(json_obj.unwrap())
+    let releases_vec = vec.Vec<ReleaseInfo>()
+    for (let i = 0;i < json_list.length; i += 1) {
+        let release_result = ReleaseInfo.from_json(json_list[i])
+        if (release_result.is_err()) {
+            return lang.Result<vec.Vec<ReleaseInfo>, ResultCode>.err(release_result.unwrap_err())
+        }
+        releases_vec.push(release_result.unwrap())
+    }
+    return lang.Result<vec.Vec<ReleaseInfo>, ResultCode>.ok(releases_vec)
+}

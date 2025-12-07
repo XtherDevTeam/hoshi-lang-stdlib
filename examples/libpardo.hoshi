@@ -1,0 +1,22 @@
+use pardo "pardo"
+use vec "vec"
+use str "str"
+use console "console"
+
+func main() : int {
+    console.print("pardo-library-validation: start\n")
+    let releases = pardo.install.github.get_releases()
+    if (releases.is_err()) {
+        console.print("pardo-library-validation: failed to get release information\n")
+        return 1
+    }
+    console.print("pardo-library-validation: sucessfully required release information, available releases (", releases.unwrap().length, "):\n")
+    for (let i = 0; i < releases.unwrap().length; i += 1) {
+        console.print(i, ":",  releases.unwrap()[i].name, "(", releases.unwrap()[i].tag_name, ")\n")
+        for (let j = 0; j < releases.unwrap()[i].assets.length; j += 1) {
+            console.print("    ", j, ":", releases.unwrap()[i].assets[j].name, "(", releases.unwrap()[i].assets[j].size, "bytes)\n")
+        }
+    }
+    console.print("pardo-library-validation: pass\n")
+    return 0
+}

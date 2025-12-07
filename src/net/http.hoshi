@@ -218,6 +218,7 @@ struct HTTPResponse {
     recv_next_raw_response() : lang.Result<io.ArrayBuffer, HTTPNetworkError>,
     recv_text() : lang.Result<str.Str, HTTPNetworkError>,
     recv_header() : lang.Result<HTTPResponse, HTTPNetworkError>,
+    recv_iter(callback: func (io.ArrayBuffer) : none) : HTTPNetworkError
 }
 
 impl HTTPResponse {
@@ -361,6 +362,75 @@ impl HTTPResponse {
                 }
             }
             return lang.Result<str.Str, HTTPNetworkError>.ok(content)
+        }
+    },
+    recv_iter(callback: func (io.ArrayBuffer) : none) : HTTPNetworkError {
+        if (this.header.headers.contains("transfer-encoding") != false && this.header.headers["transfer-encoding"] == "chunked") {
+            while (true) {
+                let chunk = this.iterate_chunk()
+                if (chunk == null) {
+                    return HTTPNetworkError.CONNECTION_RESET
+                }
+                if (chunk.size == 0) {
+                    return HTTPNetworkError.SUCCESS
+                }
+                callback(chunk)
+            }
+        } elif (this.header.headers.contains("content-length") != false) {
+            let content_length = str.toInt(this.header.headers["content-length"])
+            if (content_length == 0) {
+                return HTTPNetworkError.SUCCESS
+            }
+            let current_pos = 0
+            // if content length is larger than the remaining data, we need to read more data from the socket, but before that, we read the remaining data into the content buffer
+            if (this.cached_recv.size - this.cached_recv.current_pos > 0) {
+                let chunk = io.ArrayBuffer(this.cached_recv.size - this.cached_recv.current_pos)
+                runtime.memcpy(runtime.runtime_get_string_array_data_pointer(chunk.buf), runtime.runtime_get_string_array_data_pointer(this.cached_recv.buf) + this.cached_recv.current_pos, this.cached_recv.size - this.cached_recv.current_pos)
+                callback(chunk)
+            }
+            current_pos = this.cached_recv.size - this.cached_recv.current_pos
+            while (current_pos < content_length) {
+                let result = this.recv_next_raw_response()
+                if (result.is_err()) {
+                    return result.unwrap_err()
+                }
+                let buf = result.unwrap()
+                if (buf.size == 0) {
+                    return HTTPNetworkError.CONNECTION_RESET
+                }
+                let actual_read = math.min((content_length - current_pos) as unsigned, buf.size as unsigned)
+                let buf = io.ArrayBuffer(actual_read)
+                runtime.memcpy(runtime.runtime_get_string_array_data_pointer(buf.buf), runtime.runtime_get_string_array_data_pointer(buf.buf), actual_read)
+                callback(buf)
+                current_pos += actual_read
+                if (actual_read < buf.size) {
+                    this.cached_recv.current_pos = actual_read
+                    break
+                }
+            }
+            return HTTPNetworkError.SUCCESS
+        } else {
+            if (this.cached_recv.size - this.cached_recv.current_pos > 0) {
+                let chunk = io.ArrayBuffer(this.cached_recv.size - this.cached_recv.current_pos)
+                runtime.memcpy(runtime.runtime_get_string_array_data_pointer(chunk.buf), runtime.runtime_get_string_array_data_pointer(this.cached_recv.buf) + this.cached_recv.current_pos, this.cached_recv.size - this.cached_recv.current_pos)
+                callback(chunk)
+            }
+
+            while (true) {
+                let result = this.recv_next_raw_response()
+                if (result.is_err()) {
+                    return result.unwrap_err()
+                }
+                let buf = result.unwrap()
+                if (buf.size == 0) {
+                    return HTTPNetworkError.CONNECTION_RESET
+                }
+                callback(buf)
+                if (buf.size < 1024) {
+                    break
+                }
+            }
+            return HTTPNetworkError.SUCCESS
         }
     },
     recv_header() : lang.Result<HTTPResponse, HTTPNetworkError> {
