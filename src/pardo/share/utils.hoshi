@@ -1,0 +1,89 @@
+use str "str"
+use http "net/http"
+use fs "fs"
+use file "file"
+use io "io"
+use zip "zip"
+use runtime "runtime"
+
+enum BufferSize {
+    Default = 1048576
+}
+
+enum ResultCode {
+    Success,
+    RequestFail,
+    ConnectionReset,
+    CannotCreateFile,
+    CannotReadZipFile,
+}
+
+func save_stream(url: str.Str, filename: str.Str) : ResultCode {
+    let req = http.open("GET", url)
+    if (req.is_err()) {
+        return ResultCode.RequestFail
+    }
+    let resp = req.unwrap().send()
+    if (resp.is_err()) {
+        return ResultCode.RequestFail
+    }
+    let f = fs.open(filename, "wb+")
+    if (f.is_err()) {
+        return ResultCode.CannotCreateFile
+    }
+    let res = resp.unwrap().recv_iter(func [f](chunk: io.ArrayBuffer) : none {
+        this.f.unwrap().write(chunk.buf)
+    })
+    if (res != http.HTTPNetworkError.SUCCESS) {
+        return ResultCode.ConnectionReset
+    }
+    f.unwrap().close()
+    return ResultCode.Success
+}
+
+func extract_zipfile(filename: str.Str, dest: str.Str) : ResultCode {
+    let zip_file_res = zip.open(filename, 0, 'r')
+    if (zip_file_res.is_err()) {
+        return ResultCode.CannotReadZipFile
+    }
+
+    let zip_file = zip_file_res.unwrap()
+    let entry = zip_file.entries()
+    if (entry.is_err()) {
+        
+        return ResultCode.CannotReadZipFile
+    }
+    while (true) {
+        if (entry.is_err()) {
+            return ResultCode.CannotReadZipFile
+        }
+        let path = fs.Path(dest) / entry.unwrap().name
+        if (entry.unwrap().is_directory) {
+            path.mkdir(true) // recursively create directories
+        } else {
+            let f = fs.open(path.to_string(), "wb+")
+            if (f.is_err()) {
+                return ResultCode.CannotCreateFile
+            }
+            
+            while (entry.unwrap().size > 0) {
+                let buffer = new char[BufferSize.Default]()
+                let n = entry.unwrap().read(buffer)
+                if (n.is_err()) {
+                    return ResultCode.CannotReadZipFile
+                }
+                if (f.unwrap().write(buffer, n.unwrap()) < n.unwrap()) {
+                    return ResultCode.CannotCreateFile
+                }
+                if (n.unwrap() < BufferSize.Default) {
+                    break
+                }
+            }
+            f.unwrap().close()
+        }
+        if (entry.unwrap().next() == false) {
+            break
+        }
+    }
+    return ResultCode.Success
+}

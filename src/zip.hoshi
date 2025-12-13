@@ -90,7 +90,7 @@ import zip_strerror(error: int32) : ptr from "builtin"
 
 import zip_entries_total(zip_file: unsigned) : int32 from "builtin"
 
-import zip_entry_openbyindex(zip_file: unsigned, index: int32) : unsigned from "builtin"
+import zip_entry_openbyindex(zip_file: unsigned, index: int32) : int32 from "builtin"
 import zip_entry_open(zip_file: unsigned, entryname: ptr) : int32 from "builtin"
 import zip_entry_close(zip_file: unsigned) : int32 from "builtin"
 import zip_entry_index(zip_file: unsigned) : int from "builtin"
@@ -111,8 +111,8 @@ struct ZipFileEntry {
     is_directory: bool,
     crc32: unsigned,
     entry_index: int,
+    read_offset: int,
     constructor(zip_fp: unsigned),
-    finalizer(),
     next() : bool,
     read(buf: char[]) : lang.Result<int, str.Str>,
     write(buf: char[]) : lang.Result<int, str.Str>,
@@ -127,12 +127,7 @@ impl ZipFileEntry {
         this.is_directory = zip_entry_isdir(zip_fp)
         this.crc32 = zip_entry_crc32(zip_fp)
         this.entry_index = zip_entry_index(zip_fp)
-    },
-    finalizer() {
-        if (this.zip_fp != 0) {
-            zip_entry_close(this.zip_fp)
-            this.zip_fp = 0
-        }
+        this.read_offset = 0
     },
     close() : none {
         if (this.zip_fp != 0) {
@@ -141,10 +136,11 @@ impl ZipFileEntry {
         }
     },
     read(buf: char[]) : lang.Result<int, str.Str> {
-        let nbytes = zip_entry_noallocread(this.zip_fp, runtime.runtime_get_string_array_data_pointer(buf), buf.length)
+        let nbytes = zip_entry_noallocreadwithoffset(this.zip_fp, this.read_offset, buf.length, runtime.runtime_get_string_array_data_pointer(buf))
         if (nbytes < 0) {
             return lang.Result<int, str.Str>.err(str.Str.from_c_str(zip_strerror(nbytes)))
         }
+        this.read_offset += nbytes
         return lang.Result<int, str.Str>.ok(nbytes)
     },
     write(buf: char[]) : lang.Result<int, str.Str> {
@@ -155,13 +151,17 @@ impl ZipFileEntry {
         return lang.Result<int, str.Str>.ok(nbytes)
     },
     next() : bool {
-        let res : bool = zip_entry_openbyindex(this.zip_fp, this.entry_index + 1) != 0
+        zip_entry_close(this.zip_fp)
+        let res : bool = zip_entry_openbyindex(this.zip_fp, this.entry_index + 1) == 0
         if (res) {
             this.name = str.Str.from_c_str(zip_entry_name(this.zip_fp))
             this.size = zip_entry_size(this.zip_fp)
             this.is_directory = zip_entry_isdir(this.zip_fp)
             this.crc32 = zip_entry_crc32(this.zip_fp)
             this.entry_index = zip_entry_index(this.zip_fp)
+            this.read_offset = 0
+        } else {
+            runtime.puts("Failed to open next entry")
         }
         return res
     }
@@ -185,7 +185,8 @@ impl ZipFile {
     constructor(zip_fp: unsigned) {
         this.zip_fp = zip_fp
         if (zip_entries_total(this.zip_fp) != 0) {
-            this.entry_singleton = ZipFileEntry(zip_entry_openbyindex(this.zip_fp, 0))
+            zip_entry_openbyindex(this.zip_fp, 0)
+            this.entry_singleton = ZipFileEntry(this.zip_fp)
         }
     },
     finalizer() {

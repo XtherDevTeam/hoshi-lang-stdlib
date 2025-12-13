@@ -1,4 +1,5 @@
 use pardo "pardo"
+use utils "pardo/share/utils"
 use vec "vec"
 use str "str"
 use console "console"
@@ -17,6 +18,22 @@ func main() : int {
             console.print("    ", j, ":", releases.unwrap()[i].assets[j].name, "(", releases.unwrap()[i].assets[j].size, "bytes)\n")
         }
     }
+    if (releases.unwrap().length == 0) {
+        console.print("pardo-library-validation: no release found\n")
+        return 1
+    }
+    // attempt to download the first release asset
+    let asset = releases.unwrap()[0]
+    if (pardo.install.github.download_release(asset, ".") != pardo.install.github.ResultCode.Success) {
+        console.print("pardo-library-validation: failed to download release asset\n")
+        return 1
+    }
+    console.print("pardo-library-validation: successfully downloaded release asset\n")
+    if (utils.extract_zipfile("./hoshi-lang.zip", "./downloaded") != utils.ResultCode.Success) {
+        console.print("pardo-library-validation: failed to extract release asset\n")
+        return 1
+    }
+    console.print("pardo-library-validation: successfully downloaded and extracted release asset\n")
     console.print("pardo-library-validation: pass\n")
     return 0
 }

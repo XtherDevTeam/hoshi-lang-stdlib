@@ -4,13 +4,17 @@ use vec "vec"
 use json "json"
 use time "time"
 use lang "builtin"
+use utils "share/utils"
+use fs "fs"
 
 enum ResultCode {
+    Success,
     NotADict,
     MissingFields,
     InvalidFields,
     RequestFailed,
     InvalidResponse,
+    NoAssetFound
 }
 
 enum Platform {
@@ -106,9 +110,6 @@ impl ReleaseInfo {
 }
 
 func get_releases() : lang.Result<vec.Vec<ReleaseInfo>, ResultCode> {
-    [[platform == "win32"]] let platform = Platform.Windows
-    [[platform == "linux"]] let platform = Platform.Linux
-    [[platform == "darwin"]] let platform = Platform.Darwin
     let url : str.Str = "https://api.github.com/repos/XtherDevTeam/hoshi-lang-stdlib/releases"
     let req = http.open("GET", url)
     if (req.is_err()) {
@@ -133,4 +134,24 @@ func get_releases() : lang.Result<vec.Vec<ReleaseInfo>, ResultCode> {
         releases_vec.push(release_result.unwrap())
     }
     return lang.Result<vec.Vec<ReleaseInfo>, ResultCode>.ok(releases_vec)
+}
+
+func download_release(release: ReleaseInfo, dest_dir: str.Str) : ResultCode {
+    [[platform == "win32"]] let asset_name = "hoshi-lang-windows-clang.zip"
+    [[platform == "linux"]] let asset_name = "hoshi-lang-linux.zip"
+    [[platform == "darwin"]] let asset_name = "hoshi-lang-darwin.zip"
+    let url : str.Str = ""
+    for (let i = 0;i < release.assets.length; i += 1) {
+        if (release.assets[i].name == asset_name) {
+            url = release.assets[i].browser_download_url
+        }
+    }
+    if (url == "") {
+        return ResultCode.NoAssetFound
+    }
+    let p = fs.Path(dest_dir) / "hoshi-lang.zip"
+    if (utils.save_stream(url, p.to_string()) != utils.ResultCode.Success) {
+        return ResultCode.RequestFailed
+    }
+    return ResultCode.Success
 }
