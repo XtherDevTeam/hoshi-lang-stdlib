@@ -4,9 +4,13 @@ set(CMAKE_CXX_STANDARD 23)
 
 project(hoshi-lang-stdlib)
 
+set(CMAKE_CXX_FLAGS_RELEASE  "-O3")
+set(CMAKE_CXX_FLAGS_DEBUG    "-g -O0")
+
 file(GLOB ZIP_SRC lib/zip/*.c)
 file(GLOB SQLITE_SRC lib/sqlite/*.c)
 file(GLOB LIBNET_SRC lib/net/*.cpp)
+file(GLOB LIBOS_SRC lib/os/*.cpp)
 
 if (CMAKE_HOST_SYSTEM_NAME MATCHES "Windows")
     message(STATUS "Building for Windows, disable static linking ${OPENSSL_ROOT_DIR}")
@@ -17,7 +21,7 @@ endif()
 
 find_package(OpenSSL REQUIRED)
 
-add_library(std STATIC ${ZIP_SRC} ${SQLITE_SRC} ${LIBNET_SRC} ${LIBSIG_SRC})
+add_library(std STATIC ${ZIP_SRC} ${SQLITE_SRC} ${LIBNET_SRC} ${LIBOS_SRC})
 
 target_link_libraries(std OpenSSL::SSL OpenSSL::Crypto)
 

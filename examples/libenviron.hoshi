@@ -1,0 +1,19 @@
+use str "str"
+use console "console"
+use os "os"
+
+func main() : int {
+    let all_envs = os.environ.keys()
+    console.print("All environment variables:")
+    for (let i = 0;i < all_envs.length; i += 1) {
+        console.print(all_envs[i], "=", os.environ[all_envs[i]], "\n")
+    }
+    os.environ["HERE_COMES_17_YEARS_OLD"] = "Happy Birthday!"
+    os.environ["OttoApocalypse"] = "I'm back!"
+    console.print("New environment variable added: HERE_COMES_17_YEARS_OLD =", os.environ["HERE_COMES_17_YEARS_OLD"], "\n")
+    os.environ.remove("OttoApocalypse")
+    if (os.environ.contains("OttoApocalypse") == false || os.environ.contains("HERE_COMES_17_YEARS_OLD") == false) {
+        console.print("New environment variable removed: OttoApocalypse\n")
+    }
+    return 0
+}

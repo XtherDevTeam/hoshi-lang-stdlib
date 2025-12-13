@@ -1,0 +1,81 @@
+use runtime "runtime"
+use threading "threading"
+use str "str"
+
+import getenv(env_var: ptr) : ptr from "builtin"
+import setenv(env_var: ptr, value: ptr, overwrite: int32) : int32 from "builtin"
+import unsetenv(env_var: ptr) : int32 from "builtin"
+import putenv(env_var: ptr) : int32 from "builtin"
+import libos_environ(env: ptr) : int from "builtin"
+import libos_helper_dereference_ptr(p: ptr) : unsigned from "builtin"
+
+/**
+  * _Environ
+  * A thread-safe environment variable manager imitating the behavior of the HashMap implementation in hoshi-lang.
+  */
+struct _Environ {
+    lock: threading.Mutex,
+    static operator[](this: _Environ, key: str.Str) : str.Str,
+    /**
+      * Set the value of an environment variable.
+      * @note Usage of this method is not recommended as no param type checking is performed.
+      * @param key The name of the environment variable.
+      * @param value The value to set.
+      */
+    static operator[](value: str.Str, this: _Environ, key: str.Str) : none,
+    keys() : str.Str[],
+    contains(key: str.Str) : bool,
+    remove(key: str.Str) : none,
+    /**
+      * Add or update an environment variable.
+      * @param key The name of the environment variable.
+      * @param value The value to set.
+      * @return The updated environment variable manager.
+      * @note Recommended practice of setting environment variables is to use the `put` method.
+      */
+    put(key: str.Str, value: str.Str) : _Environ,
+    constructor(),
+}
+
+impl _Environ {
+    static operator[](this: _Environ, key: str.Str) : str.Str {
+        let p = getenv(key.c_str())
+        if (p == 0) {
+            return null
+        }
+        return str.Str.from_c_str(p)
+    },
+    static operator[](value: str.Str, this: _Environ, key: str.Str) : none {
+        this.lock.lock()
+        setenv(key.c_str(), value.c_str(), 1)
+        this.lock.unlock()
+    },
+    keys() : str.Str[] {
+        let envs = new unsigned[1]()
+        let cnt = libos_environ(runtime.runtime_get_string_array_data_pointer(envs))
+        let keys = new str.Str[cnt]()
+        for (let i = 0; i < cnt; i += 1) {
+            keys[i] = str.Str.from_c_str(libos_helper_dereference_ptr(envs[0] + i * 8)).split("=")[0]
+        }
+        return keys
+    },
+    contains(key: str.Str) : bool {
+        return getenv(key.c_str()) != 0
+    },
+    remove(key: str.Str) : none {
+        this.lock.lock()
+        unsetenv(key.c_str())
+        this.lock.unlock()
+    },
+    put(key: str.Str, value: str.Str) : _Environ {
+        this.lock.lock()
+        setenv(key.c_str(), value.c_str(), 1)
+        this.lock.unlock()
+        return this
+    },
+    constructor() {
+        this.lock = threading.Mutex()
+    }
+}
+
+let environ = _Environ()
