@@ -14,7 +14,9 @@ enum ResultCode {
     InvalidFields,
     RequestFailed,
     InvalidResponse,
-    NoAssetFound
+    NoAssetFound,
+    CannotFindZip,
+    CannotExtractZip
 }
 
 enum Platform {
@@ -152,6 +154,30 @@ func download_release(release: ReleaseInfo, dest_dir: str.Str) : ResultCode {
     let p = fs.Path(dest_dir) / "hoshi-lang.zip"
     if (utils.save_stream(url, p.to_string()) != utils.ResultCode.Success) {
         return ResultCode.RequestFailed
+    }
+    return ResultCode.Success
+}
+
+func extract_release(src_file: str.Str, dest_dir: str.Str) : ResultCode {
+    [[platform == "win32"]] let asset_name = "hoshi-lang-windows-clang"
+    [[platform == "linux"]] let asset_name = "hoshi-lang-linux"
+    [[platform == "darwin"]] let asset_name = "hoshi-lang-darwin"
+    let p = fs.Path(src_file)
+    if (p.exists() == false) {
+        return ResultCode.CannotFindZip
+    }
+    if (utils.extract_zipfile(p.to_string(), dest_dir) != utils.ResultCode.Success) {
+        return ResultCode.CannotExtractZip
+    }
+    p = fs.Path(dest_dir) / asset_name
+    // move all files in it to dest_dir
+    let assets = p.listdir()
+    for (let i = 0;i < assets.length; i += 1) {
+        assets[i].move(fs.Path(dest_dir) / assets[i].filename())
+    }
+    p.remove()
+    if (p.exists()) {
+        return ResultCode.CannotExtractZip
     }
     return ResultCode.Success
 }

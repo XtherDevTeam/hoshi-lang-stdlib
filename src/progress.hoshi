@@ -1,0 +1,131 @@
+use vec "vec"
+use str "str"
+use console "console"
+use time "time"
+use threading "threading"
+
+enum TimeStyle {
+    HHMMSS,
+    MMSS,
+    None
+} // varies by available space
+
+struct ProgressBar {
+    id: int,
+    width_bar: int,
+    width_percent: int,
+    time_style: TimeStyle,
+    total: int,
+    current: int,
+    start_time: time.Date,
+    constructor(id: int, width_bar: int, width_percent: int, time_style: TimeStyle, total: int)
+}
+
+impl ProgressBar {
+    constructor(id: int, width_bar: int, width_percent: int, time_style: TimeStyle, total: int) {
+        this.id = id
+        this.width_bar = width_bar
+        this.width_percent = width_percent
+        this.time_style = time_style
+        this.total = total
+        this.current = 0
+        this.start_time = time.Date.now()
+    }
+}
+
+impl ProgressBar : str.Stringable {
+    to_string(): str.Str {
+        let elapsed_time = time.Date.now() - this.start_time
+        let time_format : str.Str = ""
+        if (this.time_style == TimeStyle.HHMMSS) {
+            time_format = elapsed_time.format("%H:%M:%S")
+        } elif (this.time_style == TimeStyle.MMSS) {
+            time_format = elapsed_time.format("%M:%S")
+        } else {
+            time_format = ""
+        }
+        let percent : int = (this.current as deci / this.total) * 100
+        let percent_str : str.Str = ""
+        if (this.width_percent > 0) {
+            percent_str = str.format("{}%", percent)
+        }
+        let bar_width = (this.width_bar - 2) * this.current / this.total // reserve 2 characters for []
+        let bar = "[" + str.Str("=") * bar_width + str.Str(" ") * (this.width_bar - bar_width - 2) + "]"
+        return str.format("{} {} {}\n", bar, percent_str, time_format)
+    }
+}
+
+struct ProgressBars {
+    bars: vec.Vec<ProgressBar>,
+    lock: threading.Mutex,
+    width_total: int,
+    width_bar: int,
+    width_percent: int,
+    time_style: TimeStyle,
+    count: int,
+    constructor(width_total: int),
+    add_bar(total: int) : int,
+    update_bar(id: int, current: int) : none,
+    write() : none,
+    finalizer()
+}
+
+impl ProgressBars {
+    constructor(width_total: int) {
+        this.bars = vec.Vec<ProgressBar>()
+        this.lock = threading.Mutex()
+        if (width_total > 14 + 10) {
+            this.width_bar = width_total - 11
+            this.width_percent = 5              // ` xxx%`
+            this.time_style = TimeStyle.HHMMSS  // ` 00:00:00`
+        } elif (width_total > 11 + 10) {
+             // at least 10 characters for bar
+            this.width_bar = width_total - 11
+            this.width_percent = 5              // ` xxx%`
+            this.time_style = TimeStyle.MMSS    // ` 00:00`
+        } elif (width_total > 10 + 5) {
+            this.width_bar = width_total - 5
+            this.width_percent = 5              // ` xxx%`
+            this.time_style = TimeStyle.None
+        } elif (width_total > 10) {
+            this.width_bar = this.width_total
+            this.width_percent = 0              // no percent
+            this.time_style = TimeStyle.None
+        } else {
+            this.width_bar = 10
+            this.width_percent = 0              // no percent
+            this.time_style = TimeStyle.None
+        }
+        this.count = 0
+    },
+    add_bar(total: int) : int {
+        this.lock.lock()
+        let id = this.count
+        this.count = this.count + 1
+        this.bars.push(ProgressBar(id, this.width_bar, this.width_percent, this.time_style, total))
+        this.lock.unlock()
+        return id
+    },
+    update_bar(id: int, current: int) : none {
+        this.lock.lock()
+        let bar = this.bars[id]
+        if (bar != null) {
+            bar.current = current
+        }
+        this.write()
+        this.lock.unlock()
+    },
+    write() : none {
+        for (let i = 0; i < this.count; i += 1) {
+            console.print(str.format("\e[{}A", this.count - i))
+            console.print("\r")
+            console.print(this.bars[i])
+            console.print("\e[K")
+            console.print(str.format("\e[{}B", this.count - i))
+        }
+    },
+    finalizer() {
+        // move to the end of the progress bars
+        console.print(str.format("\e[{}A", this.count))
+    }
+}

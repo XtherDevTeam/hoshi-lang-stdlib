@@ -1,0 +1,27 @@
+use progress "progress"
+use str "str"
+use console "console"
+use time "time"
+use threading "threading"
+
+func task(id: int, total: int, bars: progress.ProgressBars) : none {
+    time.Duration.milliseconds(id * 150).sleep()
+    for (let i = 0; i < total; i += 1) {
+        bars.update_bar(id, i + 1)
+        time.Duration.seconds(1).sleep()
+    }
+}
+
+func main() : int {
+    let p = progress.ProgressBars(25)
+    for (let i = 0; i < 8; i += 1) {
+        p.add_bar(10)
+    }
+    for (let i = 0; i < 8; i += 1) {
+        threading.Thread(func[p, i] () : none {
+            task(this.i, 10, this.p)
+        }).start()
+    }
+    time.Duration.seconds(20).sleep()
+    return 0
+}

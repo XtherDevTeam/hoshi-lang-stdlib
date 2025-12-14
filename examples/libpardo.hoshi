@@ -29,7 +29,7 @@ func main() : int {
         return 1
     }
     console.print("pardo-library-validation: successfully downloaded release asset\n")
-    if (utils.extract_zipfile("./hoshi-lang.zip", "./downloaded") != utils.ResultCode.Success) {
+    if (pardo.install.github.extract_release("./hoshi-lang.zip", "./temp_test") != utils.ResultCode.Success) {
         console.print("pardo-library-validation: failed to extract release asset\n")
         return 1
     }
