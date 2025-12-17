@@ -1,0 +1,114 @@
+use json "json"
+use str "str"
+use hashMap "hashMap"
+use lang "builtin"
+
+struct PackageManifest {
+    name: str.Str,
+    version: str.Str,
+    author: str.Str,
+    repository: str.Str,
+    license: str.Str,
+    dependencies: hashMap.HashMap<str.Str, str.Str>,
+    constructor(),
+    constructor(name: str.Str, version: str.Str, author: str.Str, repository: str.Str, license: str.Str, dependencies: hashMap.HashMap<str.Str, str.Str>),
+    set_name(name: str.Str) : PackageManifest, 
+    set_version(version: str.Str) : PackageManifest,
+    set_author(author: str.Str) : PackageManifest,
+    set_repository(repository: str.Str) : PackageManifest,
+    set_license(license: str.Str) : PackageManifest,
+    set_dependencies(dependencies: hashMap.HashMap<str.Str, str.Str>) : PackageManifest,
+    static from_json(obj: json.JSONValue) : lang.Result<PackageManifest, str.Str>
+}
+
+impl PackageManifest {
+    constructor() {
+
+    },
+    constructor(name: str.Str, version: str.Str, author: str.Str, repository: str.Str, license: str.Str, dependencies: hashMap.HashMap<str.Str, str.Str>) {
+        this.name = name
+        this.version = version
+        this.author = author
+        this.repository = repository
+        this.license = license
+        this.dependencies = dependencies
+    },
+    set_name(name: str.Str) : PackageManifest {
+        this.name = name
+        return this
+    },
+    set_version(version: str.Str) : PackageManifest {
+        this.version = version
+        return this
+    },
+    set_author(author: str.Str) : PackageManifest {
+        this.author = author
+        return this
+    },
+    set_repository(repository: str.Str) : PackageManifest {
+        this.repository = repository
+        return this
+    },
+    set_license(license: str.Str) : PackageManifest {
+        this.license = license
+        return this
+    },
+    set_dependencies(dependencies: hashMap.HashMap<str.Str, str.Str>) : PackageManifest {
+        this.dependencies = dependencies
+        return this
+    },
+    static from_json(obj: json.JSONValue) : lang.Result<PackageManifest, str.Str> {
+        let tree = dyn_cast<json.JSONDict>(obj)
+        if (tree == null) {
+            return lang.Result<PackageManifest, str.Str>.err("Expected a JSON object")
+        }
+        let name = tree["name"], version = tree["version"], author = tree["author"], repository = tree["repository"], license = tree["license"], dependencies = tree["dependencies"]
+        if (name == null || version == null || author == null || repository == null || license == null || dependencies == null) {
+            return lang.Result<PackageManifest, str.Str>.err("Invalid properties in JSON object")
+        }
+        let name_str = dyn_cast<str.Str>(name)
+        let version_str = dyn_cast<str.Str>(version)
+        let author_str = dyn_cast<str.Str>(author)
+        let repository_str = dyn_cast<str.Str>(repository)
+        let license_str = dyn_cast<str.Str>(license)
+        if (name_str == null || version_str == null || author_str == null || repository_str == null || license_str == null) {
+            return lang.Result<PackageManifest, str.Str>.err("Invalid properties in JSON object")
+        }
+        let dependencies_obj = dyn_cast<json.JSONDict>(dependencies)
+        if (dependencies_obj == null) {
+            return lang.Result<PackageManifest, str.Str>.err("Invalid dependencies property in JSON object")
+        }
+        let dependencies_map = hashMap.HashMap<str.Str, str.Str>()
+        let dependencies_keys = dependencies_obj.keys()
+        for (let i = 0;i < dependencies_keys.size();i += 1) {
+            let key = dependencies_keys[i]
+            let value = dependencies_obj[key]
+            let value_str = dyn_cast<str.Str>(value)
+            if (value_str == null) {
+                return lang.Result<PackageManifest, str.Str>.err("Invalid dependencies property in JSON object")
+            }
+            dependencies_map.put(key, value_str)
+        }
+        return lang.Result<PackageManifest, str.Str>.ok(PackageManifest(name_str, version_str, author_str, repository_str, license_str, dependencies_map))
+    }
+}
+
+impl PackageManifest : json.JSONSerializable {
+    to_json() : json.JSONValue {
+        let dependencies_obj = json.JSONDict()
+        let dependencies_keys = this.dependencies.keys()
+        for (let i = 0; i < dependencies_keys.size(); i += 1) {
+            let key = dependencies_keys[i]
+            let value = this.dependencies[key]
+            dependencies_obj.put(key, value)
+        }
+        let obj = json.JSONDict()
+            .put("name", this.name)
+            .put("version", this.version)
+            .put("dependencies", dependencies_obj)
+            .put("author", this.author)
+            .put("repository", this.repository)
+            .put("license", this.license)
+        return obj
+    }
+}

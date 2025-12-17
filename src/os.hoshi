@@ -18,7 +18,6 @@ struct _Environ {
     static operator[](this: _Environ, key: str.Str) : str.Str,
     /**
       * Set the value of an environment variable.
-      * @note Usage of this method is not recommended as no param type checking is performed.
       * @param key The name of the environment variable.
       * @param value The value to set.
       */

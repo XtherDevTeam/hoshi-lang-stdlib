@@ -160,8 +160,6 @@ impl ZipFileEntry {
             this.crc32 = zip_entry_crc32(this.zip_fp)
             this.entry_index = zip_entry_index(this.zip_fp)
             this.read_offset = 0
-        } else {
-            runtime.puts("Failed to open next entry")
         }
         return res
     }

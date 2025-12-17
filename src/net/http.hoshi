@@ -218,13 +218,29 @@ struct HTTPResponse {
     recv_next_raw_response() : lang.Result<io.ArrayBuffer, HTTPNetworkError>,
     recv_text() : lang.Result<str.Str, HTTPNetworkError>,
     recv_header() : lang.Result<HTTPResponse, HTTPNetworkError>,
-    recv_iter(callback: func (io.ArrayBuffer) : none) : HTTPNetworkError
+    recv_iter(callback: func (io.ArrayBuffer) : none) : HTTPNetworkError,
+    content_length() : int,
+    content_type() : str.Str
 }
 
 impl HTTPResponse {
     constructor(resource: uri.URL, socket: socket.AbstractSocket) {
         this.resource = resource
         this.socket = socket
+    },
+    content_length() : int {
+        if (this.header.headers.contains("content-length") != false) {
+            return str.toInt(this.header.headers["content-length"])
+        } else {
+            return -1
+        }
+    },
+    content_type() : str.Str {
+        if (this.header.headers.contains("content-type") != false) {
+            return this.header.headers["content-type"]
+        } else {
+            return ""
+        }
     },
     recv_next_raw_response() : lang.Result<io.ArrayBuffer, HTTPNetworkError> {
         let resp = this.socket.recv(65536u)

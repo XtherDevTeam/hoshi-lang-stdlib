@@ -5,6 +5,23 @@ use file "file"
 use io "io"
 use zip "zip"
 use runtime "runtime"
+use progress "progress"
+use logger "logger"
+
+struct _PardoShareContext {
+    logger: logger.Logger,
+    progress_bars: progress.ProgressBars,
+    constructor()
+}
+
+impl _PardoShareContext {
+    constructor() {
+        this.logger = logger.ConsoleLogger(logger.Severity.INFO)
+        this.progress_bars = progress.ProgressBars(30)
+    }
+}
+
+let share_context = _PardoShareContext()
 
 enum BufferSize {
     Default = 1048576
@@ -27,11 +44,23 @@ func save_stream(url: str.Str, filename: str.Str) : ResultCode {
     if (resp.is_err()) {
         return ResultCode.RequestFail
     }
+    let total = resp.unwrap().content_length()
+    let bar_id = 0
+    if (total == -1) {
+        bar_id = -1
+    } else {
+        bar_id = share_context.progress_bars.add_bar(total)
+    }
     let f = fs.open(filename, "wb+")
     if (f.is_err()) {
         return ResultCode.CannotCreateFile
     }
-    let res = resp.unwrap().recv_iter(func [f](chunk: io.ArrayBuffer) : none {
+    let received_length = 0
+    let res = resp.unwrap().recv_iter(func [f, received_length, bar_id](chunk: io.ArrayBuffer) : none {
+        this.received_length += chunk.size
+        if (this.bar_id != -1) {
+            share_context.progress_bars.update_bar(this.bar_id, this.received_length)
+        }
         this.f.unwrap().write(chunk.buf)
     })
     if (res != http.HTTPNetworkError.SUCCESS) {

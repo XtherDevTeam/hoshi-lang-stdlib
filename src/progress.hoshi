@@ -18,6 +18,7 @@ struct ProgressBar {
     total: int,
     current: int,
     start_time: time.Date,
+    complete_time: time.Date,
     constructor(id: int, width_bar: int, width_percent: int, time_style: TimeStyle, total: int)
 }
 
@@ -35,7 +36,10 @@ impl ProgressBar {
 
 impl ProgressBar : str.Stringable {
     to_string(): str.Str {
-        let elapsed_time = time.Date.now() - this.start_time
+        if (this.current != this.total) {
+            this.complete_time = time.Date.now()
+        }
+        let elapsed_time = this.complete_time - this.start_time
         let time_format : str.Str = ""
         if (this.time_style == TimeStyle.HHMMSS) {
             time_format = elapsed_time.format("%H:%M:%S")
@@ -57,22 +61,26 @@ impl ProgressBar : str.Stringable {
 
 struct ProgressBars {
     bars: vec.Vec<ProgressBar>,
+    free_bars: vec.Vec<int>,
     lock: threading.Mutex,
     width_total: int,
     width_bar: int,
     width_percent: int,
     time_style: TimeStyle,
+    delta_lines: int,
     count: int,
     constructor(width_total: int),
     add_bar(total: int) : int,
     update_bar(id: int, current: int) : none,
     write() : none,
+    remove_bar(id: int) : none,
     finalizer()
 }
 
 impl ProgressBars {
     constructor(width_total: int) {
         this.bars = vec.Vec<ProgressBar>()
+        this.free_bars = vec.Vec<int>()
         this.lock = threading.Mutex()
         if (width_total > 14 + 10) {
             this.width_bar = width_total - 11
@@ -97,20 +105,36 @@ impl ProgressBars {
             this.time_style = TimeStyle.None
         }
         this.count = 0
+        this.delta_lines = 0
     },
     add_bar(total: int) : int {
         this.lock.lock()
-        let id = this.count
-        this.count = this.count + 1
-        this.bars.push(ProgressBar(id, this.width_bar, this.width_percent, this.time_style, total))
+        let id : int = 0
+
+        if (this.free_bars.length > 0) {
+            id = this.free_bars[this.free_bars.length - 1]
+            this.bars[id] = ProgressBar(id, this.width_bar, this.width_percent, this.time_style, total)
+            this.free_bars.pop()
+        } else {
+            id = this.count
+            this.count = this.count + 1
+            this.bars.push(ProgressBar(id, this.width_bar, this.width_percent, this.time_style, total))
+            this.delta_lines += 1
+        }
         this.lock.unlock()
+        
         return id
     },
     update_bar(id: int, current: int) : none {
         this.lock.lock()
+        console.print(str.Str("\n") * this.delta_lines)
+        this.delta_lines = 0
         let bar = this.bars[id]
         if (bar != null) {
             bar.current = current
+            if (current == bar.total) {
+                this.remove_bar(id)
+            } // automatically remove bars from the list when they are complete
         }
         this.write()
         this.lock.unlock()
@@ -123,6 +147,10 @@ impl ProgressBars {
             console.print("\e[K")
             console.print(str.format("\e[{}B", this.count - i))
         }
+    },
+    remove_bar(id: int) : none {
+        // we are not removing the bar from the list, but just put it into free bars
+        this.free_bars.push(id)
     },
     finalizer() {
         // move to the end of the progress bars

@@ -113,6 +113,7 @@ impl ReleaseInfo {
 
 func get_releases() : lang.Result<vec.Vec<ReleaseInfo>, ResultCode> {
     let url : str.Str = "https://api.github.com/repos/XtherDevTeam/hoshi-lang-stdlib/releases"
+    utils.share_context.logger.log(str.format("Fetching releases from {}", url))
     let req = http.open("GET", url)
     if (req.is_err()) {
         return lang.Result<vec.Vec<ReleaseInfo>, ResultCode>.err(ResultCode.RequestFailed)
@@ -151,6 +152,7 @@ func download_release(release: ReleaseInfo, dest_dir: str.Str) : ResultCode {
     if (url == "") {
         return ResultCode.NoAssetFound
     }
+    utils.share_context.logger.log(str.format("Downloading release from {}", url))
     let p = fs.Path(dest_dir) / "hoshi-lang.zip"
     if (utils.save_stream(url, p.to_string()) != utils.ResultCode.Success) {
         return ResultCode.RequestFailed
@@ -170,6 +172,7 @@ func extract_release(src_file: str.Str, dest_dir: str.Str) : ResultCode {
         return ResultCode.CannotExtractZip
     }
     p = fs.Path(dest_dir) / asset_name
+    utils.share_context.logger.log(str.format("Extracting release to {}", p.to_string()))
     // move all files in it to dest_dir
     let assets = p.listdir()
     for (let i = 0;i < assets.length; i += 1) {
