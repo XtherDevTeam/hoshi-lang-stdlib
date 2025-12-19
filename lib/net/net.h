@@ -20,6 +20,7 @@
 #include <openssl/ssl.h>
 
 #ifdef _WIN32
+#pragma comment(lib, "ws2_32.lib")
 #include <winsock2.h>
 #include <ws2tcpip.h>
 

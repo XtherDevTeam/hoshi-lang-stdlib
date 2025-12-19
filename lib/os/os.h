@@ -24,4 +24,7 @@ LIBOS_EXPORT int64_t libos_environ(char ***);
 
 LIBOS_EXPORT uint64_t libos_helper_dereference_ptr(void *ptr);
 
+LIBOS_EXPORT int64_t libos_system(char *ptr);
+
+LIBOS_EXPORT void libos_exit(int64_t status);
 #endif // HOSHI_LANG_STDLIB_OS_OS_H

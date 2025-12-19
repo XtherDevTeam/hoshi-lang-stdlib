@@ -16,3 +16,11 @@ LIBOS_EXPORT int64_t libos_environ(char *** env){
 LIBOS_EXPORT uint64_t libos_helper_dereference_ptr(void *ptr) {
     return (uint64_t)*(uint64_t *)ptr;
 }
+
+int64_t libos_system(char *ptr) {
+    return system(ptr);
+}
+
+void libos_exit(int64_t status) {
+    exit(status);
+}
