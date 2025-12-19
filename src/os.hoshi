@@ -1,6 +1,8 @@
 use runtime "runtime"
 use threading "threading"
 use str "str"
+use file "file"
+use lang "builtin"
 
 import getenv(env_var: ptr) : ptr from "builtin"
 import setenv(env_var: ptr, value: ptr, overwrite: int32) : int32 from "builtin"
@@ -8,6 +10,10 @@ import unsetenv(env_var: ptr) : int32 from "builtin"
 import putenv(env_var: ptr) : int32 from "builtin"
 import libos_environ(env: ptr) : int from "builtin"
 import libos_helper_dereference_ptr(p: ptr) : unsigned from "builtin"
+import libos_system(cmd: ptr) : int from "builtin"
+import libos_exit(status: int) : none from "builtin"
+import libos_popen(cmd: ptr, mode: ptr) : ptr from "builtin"
+import libos_pclose(fd: int) : int from "builtin"
 
 /**
   * _Environ
@@ -78,3 +84,147 @@ impl _Environ {
 }
 
 let environ = _Environ()
+
+func system(cmd: str.Str) : int {
+    return libos_system(cmd.c_str())
+}
+
+func exit(status: int) : none {
+    libos_exit(status)
+}
+
+struct PopenProcess {
+    fp: unsigned,
+    isText: bool,
+    constructor(fp: unsigned, isText: bool),
+    read(size: int) : file.ReadBufferView,
+    write(data: char[]) : int,
+    write(data: char[], size: int) : int,
+    close() : none,
+    seek(offset: int, whence: int) : int,
+    tell() : int,
+    flush() : none,
+    is_eof() : bool,
+    size() : int,
+    is_seekable() : bool,
+    is_readable() : bool,
+    is_writable() : bool,
+    is_closed() : bool,
+    getch() : char,
+    finalizer()
+}
+
+impl PopenProcess {
+    constructor(fp: unsigned, isText: bool) {
+        this.fp = fp
+        this.isText = isText
+    },
+    read(size: int): file.ReadBufferView {
+        let buffer = new char[size]()
+        let bytes_read = runtime.fread(runtime.runtime_get_string_array_data_pointer(buffer), 1, size, this.fp)
+        return file.ReadBufferView(bytes_read, buffer)
+    },
+    write(data: char[]) : int {
+        return runtime.fwrite(runtime.runtime_get_string_array_data_pointer(data), 1, data.length - this.isText, this.fp)
+    },
+    write(data: char[], size: int) : int {
+        return runtime.fwrite(runtime.runtime_get_string_array_data_pointer(data), 1, size, this.fp)
+    },
+    close() : none {
+        libos_pclose(this.fp)
+        this.fp = 0
+    },
+    seek(offset: int, whence: int) : int {
+        return runtime.fseek(this.fp, offset, whence)
+    },
+    tell() : int {
+        return runtime.ftell(this.fp)
+    },
+    flush() : none {
+        runtime.fflush(this.fp)
+    },
+    is_eof() : bool {
+        return runtime.feof(this.fp)
+    },
+    size() : int {
+        // seek to the end of the file
+        let current_pos = runtime.ftell(this.fp)
+        runtime.fseek(this.fp, 0, 2)
+        let size = runtime.ftell(this.fp)
+        runtime.fseek(this.fp, current_pos, 0)
+        return size
+    },
+    is_seekable() : bool {
+        return false
+    },
+    is_readable() : bool {
+        return true
+    },
+    is_writable() : bool {
+        return true
+    },
+    is_closed() : bool {
+        return this.fp == 0
+    },
+    getch() : char {
+        return runtime.fgetc(this.fp)
+    },
+    finalizer() {
+        if (this.fp != 0) {
+            this.close()
+        }
+    }
+}
+
+impl PopenProcess : file.AbstractFile {
+    read(size: int) : file.ReadBufferView {
+        return this.read(size)
+    },
+    write(data: char[]) : int {
+        return this.write(data)
+    },
+    write(data: char[], size: int) : int {
+        return this.write(data, size)
+    },
+    close() : none {
+        this.close()
+    },
+    seek(offset: int, whence: int) : int {
+        return this.seek(offset, whence)
+    },
+    tell() : int {
+        return this.tell()
+    },
+    flush() : none {
+        this.flush()
+    },
+    is_eof() : bool {
+        return this.is_eof()
+    },
+    size() : int {
+        return this.size()
+    },
+    is_seekable() : bool {
+        return this.is_seekable()
+    },
+    is_readable() : bool {
+        return this.is_readable()
+    },
+    is_writable() : bool {
+        return this.is_writable()
+    },
+    is_closed() : bool {
+        return this.is_closed()
+    },
+    getch() : char {
+        return this.getch()
+    }
+}
+
+func popen(cmd: str.Str, mode: str.Str) : lang.Result<PopenProcess, str.Str> {
+    let fp = libos_popen(cmd.c_str(), mode.c_str())
+    if (fp == 0) {
+        return lang.Result<PopenProcess, str.Str>.err("Failed to open process")
+    }
+    return lang.Result<PopenProcess, str.Str>.ok(PopenProcess(fp, mode.find('b') == false))
+}

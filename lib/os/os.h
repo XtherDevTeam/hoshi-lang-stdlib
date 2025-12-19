@@ -6,6 +6,7 @@
 #define HOSHI_LANG_STDLIB_OS_OS_H
 
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 
 #ifdef _WIN32
@@ -27,4 +28,9 @@ LIBOS_EXPORT uint64_t libos_helper_dereference_ptr(void *ptr);
 LIBOS_EXPORT int64_t libos_system(char *ptr);
 
 LIBOS_EXPORT void libos_exit(int64_t status);
+
+LIBOS_EXPORT void* libos_popen(const char *cmd, const char *mode);
+
+LIBOS_EXPORT int64_t libos_pclose(void* file);
+
 #endif // HOSHI_LANG_STDLIB_OS_OS_H

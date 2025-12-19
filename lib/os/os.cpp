@@ -24,3 +24,19 @@ int64_t libos_system(char *ptr) {
 void libos_exit(int64_t status) {
     exit(status);
 }
+
+void* libos_popen(const char *cmd, const char *mode) {
+#ifdef _WIN32
+    return (void*)_popen(cmd, mode);
+#else
+    return (void*)popen(cmd, mode);
+#endif
+}
+
+int64_t libos_pclose(void* file) {
+#ifdef _WIN32
+    return _pclose((FILE *)file);
+#else
+    return pclose((FILE *)file);
+#endif
+}

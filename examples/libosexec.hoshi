@@ -1,0 +1,20 @@
+use os "os"
+use str "str"
+use console "console"
+
+func main() : int {
+    console.print("libosexec-validation: start\n")
+    if (os.system("uname -a") != 0) {
+        console.print("libosexec-validation: system uname -a failed\n")
+        return 1
+    }
+    let f = os.popen("whoami", "r")
+    if (f.is_err()) {
+        console.print("libosexec-validation: popen whoami failed\n")
+        return 1
+    }
+    let read_result = f.unwrap().read(1024)
+    let s = str.Str(read_result.data)
+    console.print("libosexec-validation: popen whoami returned:", s, "\n")
+    return 0
+}
