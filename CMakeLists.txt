@@ -14,6 +14,8 @@ file(GLOB LIBOS_SRC lib/os/*.cpp)
 
 if (CMAKE_HOST_SYSTEM_NAME MATCHES "Windows")
     message(STATUS "Building for Windows, disable static linking ${OPENSSL_ROOT_DIR}")
+    # also use /MT instead of /MD
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 else()
     message(STATUS "Building for non-Windows, enable static linking")
     set(OPENSSL_USE_STATIC_LIBS ON)
