@@ -5,12 +5,23 @@
 #ifndef HOSHI_LANG_STDLIB_OS_OS_H
 #define HOSHI_LANG_STDLIB_OS_OS_H
 
+#define LIBOS_EXPORT extern "C"
+
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 
 #ifdef _WIN32
 #include <windows.h>
+
+LIBOS_EXPORT char* getenv(const char* name);
+
+LIBOS_EXPORT int setenv(const char* name, const char* value, int overwrite);
+
+LIBOS_EXPORT int unsetenv(const char* name);
+
+LIBOS_EXPORT int putenv(const char* name);
+
 #else
 
 #include <unistd.h>
@@ -18,8 +29,6 @@
 extern char **environ;
 
 #endif
-
-#define LIBOS_EXPORT extern "C"
 
 LIBOS_EXPORT int64_t libos_environ(char ***);
 
@@ -32,5 +41,7 @@ LIBOS_EXPORT void libos_exit(int64_t status);
 LIBOS_EXPORT void* libos_popen(const char *cmd, const char *mode);
 
 LIBOS_EXPORT int64_t libos_pclose(void* file);
+
+LIBOS_EXPORT int64_t libos_chmod(const char *path, int64_t mode);
 
 #endif // HOSHI_LANG_STDLIB_OS_OS_H

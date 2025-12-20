@@ -35,6 +35,7 @@ jobs:
       - name: Install LLVM and Clang (Linux)
         if: runner.os == 'Linux'
         run: |
+          sudo apt install libssl-dev -y
           wget https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh 20 all
@@ -72,13 +73,30 @@ jobs:
         run: 
           make package
 
-      - name: Upload artifacts
+      - name: Build pardo package manager
+        env:
+          CC: clang
+          CXX: clang++
+          LLVM_DIR: ${{ env.LLVM_PATH }}/lib/cmake/llvm
+        shell: bash
+        run: 
+          ./build-package/bin/hoshi_lang ./src/pardo/main.hoshi -o build-package/bin/pardo -I src --build-mode release
+
+      - name: Upload hoshi-lang artifacts
         uses: actions/upload-artifact@v4
         with:
           # Naming artifacts distinctly to ensure easier collection later
           name: hoshi-lang-${{ matrix.os == 'ubuntu-latest' && 'linux' || 'darwin' }}
           path: |
             build-package/*
+
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          # Naming artifacts distinctly to ensure easier collection later
+          name: hoshi-lang-installer-${{ matrix.os == 'ubuntu-latest' && 'linux' || 'darwin' }}
+          path: |
+            build-package/bin/pardo
 
   build-windows:
     runs-on: windows-latest
@@ -87,6 +105,7 @@ jobs:
         toolchain: [ 'mingw', 'clang' ]
     steps:
       - uses: actions/checkout@v3
+      - uses: ilammy/msvc-dev-cmd@v1
 
       - name: Download and Setup OpenSSL (Manual)
         run: |
@@ -158,12 +177,30 @@ jobs:
         run: make package
         shell: bash
 
-      - name: Upload artifacts
+      - name: Build pardo package manager
+        if: matrix.toolchain == 'clang'
+        env:
+          CC: clang
+          CXX: clang++
+          LLVM_DIR: ${{ env.LLVM_PATH }}/lib/cmake/llvm
+        shell: bash
+        run: 
+          ./build-package/bin/hoshi_lang.exe ./src/pardo/main.hoshi -o build-package/bin/pardo.exe -I src --build-mode release
+
+      - name: Upload hoshi-lang artifacts
         uses: actions/upload-artifact@v4
         with:
           name: hoshi-lang-windows-${{ matrix.toolchain }}
           path: |
             build-package/*
+
+      - name: Upload installer artifacts
+        if: matrix.toolchain == 'clang'
+        uses: actions/upload-artifact@v4
+        with:
+          name: hoshi-lang-installer-windows
+          path: |
+            build-package/bin/pardo.exe
 
   # New job to handle release creation
   create-release:

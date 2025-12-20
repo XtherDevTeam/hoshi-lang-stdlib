@@ -1,0 +1,31 @@
+use pardo "pardo"
+use str "str"
+use hashMap "hashMap"
+use lang "builtin"
+use console "console"
+
+func print_help(self: str.Str) : none {
+    let help_msg = str.format("pardo package manager for hoshi-lang
+Made with love by Jerry Chou (This project is licensed under the MIT License)
+Usage: {} <command> [options]
+Options:
+  -h, --help     Show help message
+", self)
+    console.print(help_msg)
+}
+
+func main() : int {
+    let argv = lang.argv()
+    if (pardo.install.github.detect_existing_hoshi_installation() == "") {
+        console.print("No existing hoshi installation found. Running setup...\n")
+        pardo.install.github.installer("", "")
+    }
+    for (let i = 1; i < argv.length; i += 1) {
+        let arg : str.Str = argv[i]
+        if (arg == "-h" || arg == "--help") {
+            print_help(argv[0])
+            return 0
+        }
+    }
+    return 0
+}

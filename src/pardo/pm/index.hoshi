@@ -1,1 +1,2 @@
 use package "package"
+use resolve "resolve"

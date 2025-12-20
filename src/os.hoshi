@@ -14,6 +14,7 @@ import libos_system(cmd: ptr) : int from "builtin"
 import libos_exit(status: int) : none from "builtin"
 import libos_popen(cmd: ptr, mode: ptr) : ptr from "builtin"
 import libos_pclose(fd: int) : int from "builtin"
+import libos_chmod(path: ptr, mode: int) : int from "builtin"
 
 /**
   * _Environ
@@ -227,4 +228,8 @@ func popen(cmd: str.Str, mode: str.Str) : lang.Result<PopenProcess, str.Str> {
         return lang.Result<PopenProcess, str.Str>.err("Failed to open process")
     }
     return lang.Result<PopenProcess, str.Str>.ok(PopenProcess(fp, mode.find('b') == false))
+}
+
+func chmod(path: str.Str, mode: int) : int {
+    return libos_chmod(path.c_str(), mode)
 }

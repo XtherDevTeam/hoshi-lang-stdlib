@@ -4,7 +4,28 @@
 
 #include "os.h"
 
-LIBOS_EXPORT int64_t libos_environ(char *** env){
+#ifdef _WIN32
+#include <windows.h>
+#include <io.h>
+
+LIBOS_EXPORT int setenv(const char* name, const char* value, int overwrite) {
+    _putenv_s(name, value);
+    return 0;
+}
+
+LIBOS_EXPORT int unsetenv(const char* name) {
+    _putenv_s(name, "");
+    return 0;
+}
+
+LIBOS_EXPORT int putenv(const char* name) {
+    return _putenv(name);
+}
+#else
+#include <sys/stat.h>
+#endif
+
+LIBOS_EXPORT int64_t libos_environ(char *** env) {
     *env = environ;
     int64_t count = 0;
     while (environ[count]) {
@@ -38,5 +59,13 @@ int64_t libos_pclose(void* file) {
     return _pclose((FILE *)file);
 #else
     return pclose((FILE *)file);
+#endif
+}
+
+int64_t libos_chmod(const char *path, int64_t mode) {
+#ifdef _WIN32
+    return _chmod(path, mode);
+#else
+    return chmod(path, mode);
 #endif
 }

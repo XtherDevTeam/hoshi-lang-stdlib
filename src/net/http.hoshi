@@ -220,13 +220,17 @@ struct HTTPResponse {
     recv_header() : lang.Result<HTTPResponse, HTTPNetworkError>,
     recv_iter(callback: func (io.ArrayBuffer) : none) : HTTPNetworkError,
     content_length() : int,
-    content_type() : str.Str
+    content_type() : str.Str,
+    status_code() : int,
 }
 
 impl HTTPResponse {
     constructor(resource: uri.URL, socket: socket.AbstractSocket) {
         this.resource = resource
         this.socket = socket
+    },
+    status_code() : int {
+        return this.header.status_code
     },
     content_length() : int {
         if (this.header.headers.contains("content-length") != false) {

@@ -1,0 +1,400 @@
+use package "package"
+use json "json"
+use str "str"
+use vec "vec"
+use net "net"
+use hashMap "hashMap"
+use lang "builtin"
+use utils "share/utils"
+
+struct DefaultPackageSource {
+    name: str.Str,
+    remote: str.Str,
+    constructor(name: str.Str, remote: str.Str),
+    constructor(),
+    set_remote(remote: str.Str) : DefaultPackageSource
+}
+
+impl DefaultPackageSource {
+    constructor(name: str.Str, remote: str.Str) {
+        this.name = name
+        this.remote = remote
+    },
+    constructor() {
+        this.name = "default"
+        this.remote = "https://www.xiaokang00010.top:62112/index"
+    },
+    set_remote(remote: str.Str) : DefaultPackageSource {
+        this.remote = remote
+        return this
+    }
+}
+
+impl DefaultPackageSource : package.PackageSource {
+    get_name() : str.Str {
+        return this.name
+    },
+    query_package(name: str.Str) : lang.Result<package.PackageInformation, package.PackageSourceQueryResultCode> {
+        let resp = net.http.open("GET", str.format("{}/packages/{}/index", this.remote, name)).unwrap().send()
+        if (resp.is_err()) {
+            return lang.Result<package.PackageInformation, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.NetworkError)
+        }
+        if (resp.unwrap().status_code() != 200) {
+            return lang.Result<package.PackageInformation, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.NetworkError)
+        }
+        let data = resp.unwrap().recv_text()
+        if (data.is_err()) {
+            return lang.Result<package.PackageInformation, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.NetworkError)
+        }
+        let manifest = json.parse(data.unwrap())
+        if (manifest.is_err()) {
+            return lang.Result<package.PackageInformation, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.InvalidManifest)
+        }
+        let body = dyn_cast<json.JSONDict>(manifest.unwrap())
+        if (body == null) {
+            return lang.Result<package.PackageInformation, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.InvalidManifest)
+        }
+        if (body.contains("error") || body.contains("data") == false) {
+            return lang.Result<package.PackageInformation, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.NotFound)
+        }
+        let data = dyn_cast<json.JSONDict>(body["data"])
+        if (data == null) {
+            return lang.Result<package.PackageInformation, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.InvalidManifest)
+        }
+        let package_info = package.PackageInformation.from_json(data)
+        if (package_info.is_err()) {
+            return lang.Result<package.PackageInformation, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.InvalidManifest)
+        }
+        return lang.Result<package.PackageInformation, package.PackageSourceQueryResultCode>.ok(package_info.unwrap())
+    },
+    query_package_manifest(name: str.Str, version: str.Str) : lang.Result<package.PackageManifest, package.PackageSourceQueryResultCode> {
+        let resp = net.http.open("GET", str.format("{}/packages/{}/manifest/{}", this.remote, name, version)).unwrap().send()
+        if (resp.is_err()) {
+            return lang.Result<package.PackageManifest, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.NetworkError)
+        }
+        if (resp.unwrap().status_code() != 200) {
+            return lang.Result<package.PackageManifest, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.NetworkError)
+        }
+        let data = resp.unwrap().recv_text()
+        if (data.is_err()) {
+            return lang.Result<package.PackageManifest, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.NetworkError)
+        }
+        let manifest = json.parse(data.unwrap())
+        if (manifest.is_err()) {
+            return lang.Result<package.PackageManifest, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.InvalidManifest)
+        }
+        let body = dyn_cast<json.JSONDict>(manifest.unwrap())
+        if (body == null) {
+            return lang.Result<package.PackageManifest, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.InvalidManifest)
+        }
+        if (body.contains("error") || body.contains("data") == false) {
+            return lang.Result<package.PackageManifest, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.NotFound)
+        }
+        let data = dyn_cast<json.JSONDict>(body["data"])
+        if (data == null) {
+            return lang.Result<package.PackageManifest, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.InvalidManifest)
+        }
+        let manifest_object = package.PackageManifest.from_json(data)
+        if (manifest_object.is_err()) {
+            return lang.Result<package.PackageManifest, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.InvalidManifest)
+        }
+        return lang.Result<package.PackageManifest, package.PackageSourceQueryResultCode>.ok(manifest_object.unwrap())
+    },
+    query_asset_url(name: str.Str, version: str.Str, platform: str.Str, arch: str.Str) : str.Str {
+        return str.format("{}/packages/{}/{}-{}-{}.zip", this.remote, name, version, platform, arch)
+    }
+}
+
+struct SemVer {
+    major: unsigned,
+    minor: unsigned,
+    patch: unsigned,
+    constructor(major: unsigned, minor: unsigned, patch: unsigned),
+    static parse(version: str.Str) : lang.Result<SemVer, str.Str>,
+    compare(other: SemVer) : int,
+}
+
+impl SemVer {
+    constructor(major: unsigned, minor: unsigned, patch: unsigned) {
+        this.major = major
+        this.minor = minor
+        this.patch = patch
+    },
+    static parse(version: str.Str) : lang.Result<SemVer, str.Str> {
+        let parts = version.split(".")
+        if (parts.length != 3) {
+            return lang.Result<SemVer, str.Str>.err("Invalid version format")
+        }
+        let major = str.toInt(parts[0])
+        let minor = str.toInt(parts[1])
+        let patch = str.toInt(parts[2])
+        return lang.Result<SemVer, str.Str>.ok(SemVer(major, minor, patch))
+    },
+    compare(other: SemVer) : int {
+        if (this.major != other.major) {
+            if (this.major > other.major) { return 1 } else { return -1 }
+        }
+        if (this.minor != other.minor) {
+            if (this.minor > other.minor) { return 1 } else { return -1 }
+        }
+        if (this.patch != other.patch) {
+            if (this.patch > other.patch) { return 1 } else { return -1 }
+        }
+        return 0
+    }
+}
+
+impl SemVer : str.Stringable {
+    to_string() : str.Str {
+        return str.format("{}.{}.{}", this.major, this.minor, this.patch)
+    }
+}
+
+enum PackageConstraint {
+    LessThan,           // <
+    LessThanOrEqual,    // <=
+    Equal,              // =
+    GreaterThanOrEqual, // >=
+    GreaterThan         // >
+}
+
+struct PackageDesireVersion {
+    version: SemVer,
+    constraint: PackageConstraint,
+    desired_by: str.Str,
+    constructor(version: SemVer, constraint: PackageConstraint, desired_by: str.Str),
+    static parse(version_constraint: str.Str) : lang.Result<PackageDesireVersion, str.Str>,
+    set_desired_by(desired_by: str.Str) : PackageDesireVersion,
+    is_satisfied_by(candidate: SemVer) : bool
+}
+
+impl PackageDesireVersion {
+    constructor(version: SemVer, constraint: PackageConstraint, desired_by: str.Str) {
+        this.version = version
+        this.constraint = constraint
+        this.desired_by = desired_by
+    },
+    static parse(version_constraint: str.Str) : lang.Result<PackageDesireVersion, str.Str> {
+        let alpha_start = 0
+        let constraint : PackageConstraint = 0
+        if (version_constraint.startswith("<")) {
+            constraint = PackageConstraint.LessThan
+            alpha_start = 1
+        } elif (version_constraint.startswith("<=")) {
+            constraint = PackageConstraint.LessThanOrEqual
+            alpha_start = 2
+        } elif (version_constraint.startswith("=")) {
+            constraint = PackageConstraint.Equal
+        } elif (version_constraint.startswith(">=")) {
+            constraint = PackageConstraint.GreaterThanOrEqual
+            alpha_start = 2
+        } elif (version_constraint.startswith(">")) {
+            constraint = PackageConstraint.GreaterThan
+            alpha_start = 1
+        } else {
+            return lang.Result<PackageDesireVersion, str.Str>.err("Invalid version constraint")
+        }
+        let version_str = version_constraint.substring(alpha_start, version_constraint.length - 1)
+        let version = SemVer.parse(version_str)
+        if (version.is_err()) {
+            return lang.Result<PackageDesireVersion, str.Str>.err(version.unwrap_err())
+        }
+        return lang.Result<PackageDesireVersion, str.Str>.ok(PackageDesireVersion(version.unwrap(), constraint, ""))
+    },
+    set_desired_by(desired_by: str.Str) : PackageDesireVersion {
+        this.desired_by = desired_by
+        return this
+    },
+    is_satisfied_by(candidate: SemVer) : bool {
+        let cmp = candidate.compare(this.version)
+        if (this.constraint == PackageConstraint.Equal) {
+            return cmp == 0
+        } elif (this.constraint == PackageConstraint.LessThan) {
+            return cmp < 0
+        } elif (this.constraint == PackageConstraint.LessThanOrEqual) {
+            return cmp <= 0
+        } elif (this.constraint == PackageConstraint.GreaterThan) {
+            return cmp > 0
+        } elif (this.constraint == PackageConstraint.GreaterThanOrEqual) {
+            return cmp >= 0
+        }
+        return false
+    }
+}
+
+struct PackageIndex {
+    package_name: str.Str,
+    available_versions: vec.Vec<SemVer>,
+    desired_version_constraints: vec.Vec<PackageDesireVersion>,
+    constructor(package_name: str.Str, available_versions: vec.Vec<SemVer>, desired_version_constraints: vec.Vec<PackageDesireVersion>),
+    constructor(package_name: str.Str),
+    add_version_constraint(version: str.Str, constraint: PackageConstraint, desired_by: str.Str) : PackageIndex,
+}
+
+struct PackageResolveContext {
+    source: package.PackageSource,
+    resolved_versions: hashMap.HashMap<str.Str, SemVer>,
+    constructor(source: package.PackageSource),
+    lock_version(name: str.Str, version: SemVer) : none,
+    unlock_version(name: str.Str) : none,
+    get_resolved_version(name: str.Str) : SemVer
+}
+
+impl PackageResolveContext {
+    constructor(source: package.PackageSource) {
+        this.source = source
+        this.resolved_versions = hashMap.HashMap<str.Str, SemVer>()
+    },
+    lock_version(name: str.Str, version: SemVer) : void {
+        this.resolved_versions.put(name, version)
+    },
+    unlock_version(name: str.Str) : void {
+        this.resolved_versions.remove(name)
+    },
+    get_resolved_version(name: str.Str) : SemVer {
+        if (this.resolved_versions.contains(name)) {
+            return this.resolved_versions[name]
+        }
+        return null
+    }
+}
+
+enum PackageResolveResult {
+    Success,
+    Conflict,
+    NotFound,
+    NetworkError,
+    InvalidSemVer,
+    InvalidPackageConstraint,
+}
+
+struct DependencyTask {
+    name: str.Str,
+    constraint: PackageDesireVersion,
+    constructor(name: str.Str, constraint: PackageDesireVersion)
+}
+
+impl DependencyTask {
+    constructor(name: str.Str, constraint: PackageDesireVersion) {
+        this.name = name
+        this.constraint = constraint
+    }
+}
+
+func solve_recursive(ctx: PackageResolveContext, tasks: vec.Vec<DependencyTask>) : PackageResolveResult {
+    if (tasks.length == 0) {
+        return PackageResolveResult.Success
+    }
+
+    let task = tasks[tasks.length - 1]
+    let remaining_tasks = vec.Vec<DependencyTask>()
+    for(let i = 0; i < tasks.length - 1; i += 1) { 
+        remaining_tasks.push(tasks[i])
+    }
+
+    let pkg_name = task.name
+    let constraint = task.constraint
+
+    // 2. Check if already resolved
+    let existing_version = ctx.get_resolved_version(pkg_name)
+    
+    if (existing_version != null) {
+        if (constraint.is_satisfied_by(existing_version)) {
+            return solve_recursive(ctx, remaining_tasks)
+        } else {
+            return PackageResolveResult.Conflict
+        }
+    }
+
+    // 3. Not resolved yet. Query Source.
+    let pkg_info_res = ctx.source.query_package(pkg_name)
+    if (pkg_info_res.is_err()) {
+        let err = pkg_info_res.unwrap_err()
+        if (err == package.PackageSourceQueryResultCode.NotFound) { 
+            return PackageResolveResult.NotFound
+        }
+        return PackageResolveResult.NetworkError
+    }
+    let pkg_info = pkg_info_res.unwrap()
+
+    let candidate_versions = vec.Vec<SemVer>()
+    
+    for (let i = 0; i < pkg_info.versions.length; i+=1) {
+        let v_str = pkg_info.versions[i]
+        let v_semver = SemVer.parse(v_str)
+        if (v_semver.is_ok()) {
+            let v = v_semver.unwrap()
+            if (constraint.is_satisfied_by(v)) {
+                candidate_versions.push(v)
+            }
+        }
+    }
+
+    // 5. Try Candidates (Backtracking Loop)
+    for (let i = candidate_versions.length - 1; i >= 0; i -= 1) {
+        let candidate = candidate_versions[i]
+
+        // A. Tentatively lock this version
+        ctx.lock_version(pkg_name, candidate)
+
+        let manifest_res = ctx.source.query_package_manifest(pkg_name, str.Stringable(candidate).to_string())
+        if (manifest_res.is_err()) {
+            ctx.unlock_version(pkg_name)
+            continue 
+        }
+        let manifest = manifest_res.unwrap()
+
+        // C. Add new dependencies to the task list
+        // We create a new task list = remaining_tasks + candidate_deps
+        let next_level_tasks = vec.Vec<DependencyTask>()
+        for(let k = 0; k < remaining_tasks.length; k += 1) { 
+            next_level_tasks.push(remaining_tasks[k])
+        }
+
+        let deps_keys = manifest.dependencies.keys()
+        let conversion_ok = true
+        for (let j = 0; j < deps_keys.length; j += 1) {
+            let d_name = deps_keys[j]
+            let d_const_str = manifest.dependencies[d_name]
+            let d_req = PackageDesireVersion.parse(d_const_str)
+            if (d_req.is_err()) { 
+                conversion_ok = false
+                break
+            }
+            next_level_tasks.push(DependencyTask(d_name, d_req.unwrap()))
+        }
+
+        if (conversion_ok) {
+            // D. RECURSE
+            let result = solve_recursive(ctx, next_level_tasks)
+            
+            if (result == PackageResolveResult.Success) {
+                // Success! Propagate up.
+                return PackageResolveResult.Success
+            }
+        }
+
+        // E. Failure in subtree? Unlock (Backtrack) and loop to next candidate.
+        ctx.unlock_version(pkg_name)
+    }
+
+    // 6. If we exhausted all candidates and none worked
+    return PackageResolveResult.Conflict
+}
+
+func solve_dependencies(manifest: package.PackageManifest, ctx: PackageResolveContext) : PackageResolveResult {
+    let tasks = vec.Vec<DependencyTask>()
+    let keys = manifest.dependencies.keys()
+    
+    for(let i = 0; i < keys.length; i += 1) {
+        let name = keys[i]
+        let const_str = manifest.dependencies[name]
+        let req = PackageDesireVersion.parse(const_str)
+        if (req.is_err()) { 
+            return PackageResolveResult.Conflict
+        }
+        tasks.push(DependencyTask(name, req.unwrap()))
+    }
+
+    return solve_recursive(ctx, tasks)
+}

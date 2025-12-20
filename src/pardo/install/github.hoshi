@@ -6,6 +6,8 @@ use time "time"
 use lang "builtin"
 use utils "share/utils"
 use fs "fs"
+use os "os"
+use console "console"
 
 enum ResultCode {
     Success,
@@ -182,5 +184,182 @@ func extract_release(src_file: str.Str, dest_dir: str.Str) : ResultCode {
     if (p.exists()) {
         return ResultCode.CannotExtractZip
     }
+    fs.Path(src_file).remove()
     return ResultCode.Success
+}
+
+func detect_existing_hoshi_installation() : str.Str {
+    if (os.environ.contains("HOSHI_HOME")) {
+        return os.environ["HOSHI_HOME"]
+    } else {
+        let process = os.popen("hoshi_lang -w", "r")
+        if (process.is_err()) {
+            return ""
+        }
+        let buffer = process.unwrap().read(2048)
+        let result_str = str.Str(buffer.data)
+        return result_str
+    }
+}
+
+enum ShellEnvironmentType {
+    Pwsh,
+    Bash,
+    Zsh,
+    Unknown
+}
+
+func detect_shell_environment() : ShellEnvironmentType {
+    let shell_name = os.environ["SHELL"]
+    if (shell_name.find("pwsh") != -1) {
+        return ShellEnvironmentType.Pwsh
+    } elif (shell_name.find("bash") != -1) {
+        return ShellEnvironmentType.Bash
+    } elif (shell_name.find("zsh") != -1) {
+        return ShellEnvironmentType.Zsh
+    } else {
+        return ShellEnvironmentType.Unknown
+    }
+}
+
+func modify_env(dest_dir: str.Str) : bool {
+    let d_path = fs.Path(dest_dir)
+    let b_path = d_path / "bin"
+    let shell_type = detect_shell_environment()
+    if (shell_type == ShellEnvironmentType.Pwsh) {
+        os.system(str.format("powershell -Command \"{}\"", str.escape(
+            str.format("[Environment]::SetEnvironmentVariable(\"PATH\", $Env:PATH + \";{}\", [EnvironmentVariableTarget]::User)", b_path.to_string())
+        )))
+        os.system(str.format("powershell -Command \"{}\"", str.escape(
+            str.format("[Environment]::SetEnvironmentVariable(\"HOSHI_HOME\", \"{}\", [EnvironmentVariableTarget]::User)", d_path.to_string())
+        )))
+        return true
+    } elif (shell_type == ShellEnvironmentType.Bash) {
+        let profile_path = fs.Path.home_dir() / ".bashrc"
+        let fp = fs.open(profile_path.to_string(), "a")
+        if (fp.is_err()) {
+            utils.share_context.logger.error(str.format("Failed to open {} for appending", profile_path))
+            return false
+        } else {
+            let fp = fp.unwrap()
+            fp.write(str.Str("# begin hoshi-lang\n").data)
+            fp.write(str.format("export PATH=$PATH:{}\n", b_path.to_string()).data)
+            fp.write(str.format("export HOSHI_HOME={}\n", d_path.to_string()).data)
+            fp.write(str.Str("# end hoshi-lang\n").data)
+            fp.close()
+            return true
+        }
+    } elif (shell_type == ShellEnvironmentType.Zsh) {
+        let profile_path = fs.Path.home_dir() / ".zshrc"
+        let fp = fs.open(profile_path.to_string(), "a")
+        if (fp.is_err()) {
+            utils.share_context.logger.error(str.format("Failed to open {} for appending", profile_path))
+            return false
+        } else {
+            let fp = fp.unwrap()
+            fp.write(str.Str("# begin hoshi-lang\n").data)
+            fp.write(str.format("export PATH=$PATH:{}\n", b_path.to_string()).data)
+            fp.write(str.format("export HOSHI_HOME={}\n", d_path.to_string()).data)
+            fp.write(str.Str("# end hoshi-lang\n").data)
+            fp.close()
+            return true
+        }
+    } else {
+        return false
+    }
+}
+
+func remove_existing_installation() : bool {
+    let existing_installation = detect_existing_hoshi_installation()
+    if (existing_installation == "") {
+        utils.share_context.logger.warn("No existing installation found")
+        return false
+    }
+    console.print("Removing existing installation at {}\n", existing_installation)
+    let p = fs.Path(existing_installation)
+    if (p.exists() == false) {
+        utils.share_context.logger.warn("Installation directory does not exist")
+        return true
+    }
+    if (p.remove(true) == false) {
+        utils.share_context.logger.error("Failed to remove installation directory")
+        return false
+    }
+    return true
+}
+
+func installer(version: str.Str, dest_dir: str.Str) : str.Str {
+    let existing_installation = detect_existing_hoshi_installation()
+    if (existing_installation != "") {
+        utils.share_context.logger.warn(str.format("Found existing installation at {}", existing_installation))
+        return existing_installation
+    }
+    console.print("Beginning hoshi-lang installation...\n")
+    utils.share_context.logger.log("Querying available releases")
+    let releases = get_releases()
+    if (releases.is_err()) {
+        utils.share_context.logger.error(str.format("Failed to get releases: {}", releases.unwrap_err()))
+        return ""
+    }
+    if (releases.unwrap().length == 0) {
+        utils.share_context.logger.error("No releases found")
+        return ""
+    }
+    if (version == "") {
+        console.print("Sucessfully required release information, available releases:\n")
+        for (let i = 0; i < releases.unwrap().length && i < 10; i += 1) {
+            console.print(i, ":",  releases.unwrap()[i].name, "(", releases.unwrap()[i].tag_name, ")\n")
+        }
+        version = console.input(str.format("Select a release to install ({}): ", releases.unwrap()[0].tag_name)).trim()
+        if (version == "") {
+            version = releases.unwrap()[0].tag_name
+        }
+    }
+    if (dest_dir == "") {
+        let d = fs.Path.home_dir() / ".hoshi"
+        dest_dir = console.input(str.format("Enter installation directory (default: {}):", d.to_string())).trim()
+        if (dest_dir == "") {
+            dest_dir = d.to_string()
+        }
+    }
+    let release_found = -1
+    for (let i = 0; i < releases.unwrap().length; i += 1) {
+        if (releases.unwrap()[i].tag_name == version) {
+            release_found = i
+            break
+        }
+    }
+    if (release_found == -1) {
+        utils.share_context.logger.error(str.format("Release {} not found", version))
+        return ""
+    }
+    let release = releases.unwrap()[release_found]
+    console.print(str.format("Installing release {} ({}), this may take a while...\n", release.name, release.tag_name))
+    let temp_dir = fs.Path.temp_dir()
+    let dest_dir_path = fs.Path(dest_dir)
+    if (dest_dir_path.exists() == false) {
+        if (dest_dir_path.mkdir(true) == false) {
+            utils.share_context.logger.error(str.format("Failed to create directory {}", dest_dir))
+            return ""
+        }
+    }
+    if (download_release(release, temp_dir.to_string()) != ResultCode.Success) {
+        utils.share_context.logger.error("failed to download release asset\n")
+        return 1
+    }
+    utils.share_context.logger.error("successfully downloaded release asset\n")
+    if (extract_release(temp_dir.to_string() + "/hoshi-lang.zip", dest_dir) != ResultCode.Success) {
+        utils.share_context.logger.error("failed to extract release asset\n")
+        return 1
+    }
+    utils.share_context.logger.log("successfully downloaded and extracted release asset\n")
+    [[platform != "win32"]] os.chmod(dest_dir + "/bin/hoshi_lang", 0o755)
+    let hoshi_bin = fs.Path(dest_dir) / "bin"
+    console.print(str.format("Successfully installed hoshi-lang to {}\n", dest_dir))
+    if (modify_env(dest_dir) == false) {
+        console.print("You may need to set up your shell environment manually:\nFor HOSHI_HOME, set to {}\nFor PATH, add {}\n", dest_dir, hoshi_bin)
+    } else {
+        console.print("You may need to restart your shell for changes to take effect\n")
+    }
+    return dest_dir
 }
