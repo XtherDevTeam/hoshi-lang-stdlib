@@ -1,11 +1,14 @@
+if (NOT MINGW AND CMAKE_HOST_SYSTEM_NAME MATCHES "Windows")
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fms-runtime-lib=static")
+    set(CMAKE_C_FLAGS "${CMAKE_CXX_FLAGS} -fms-runtime-lib=static")
+endif()
+
 cmake_minimum_required(VERSION 3.10)
 
 set(CMAKE_CXX_STANDARD 23)
 
 project(hoshi-lang-stdlib)
-
-set(CMAKE_CXX_FLAGS_RELEASE  "-O3")
-set(CMAKE_CXX_FLAGS_DEBUG    "-g -O0")
 
 file(GLOB ZIP_SRC lib/zip/*.c)
 file(GLOB SQLITE_SRC lib/sqlite/*.c)
@@ -15,9 +18,6 @@ file(GLOB LIBOS_SRC lib/os/*.cpp)
 if (CMAKE_HOST_SYSTEM_NAME MATCHES "Windows")
     message(STATUS "Building for Windows, disable static linking ${OPENSSL_ROOT_DIR}")
     # also use /MT instead of /MD
-    if (NOT MINGW)
-        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -fms-runtime-lib=static")
-    endif()
 else()
     message(STATUS "Building for non-Windows, enable static linking")
     set(OPENSSL_USE_STATIC_LIBS ON)
@@ -40,7 +40,6 @@ if (CMAKE_HOST_SYSTEM_NAME MATCHES "Windows")
     list(APPEND MODIFIED_OPENSSL_LIBRARIES ${OPENSSL_INCLUDE_DIR}/../libssl-3-x64.dll)
     message(STATUS "Patch for Windows: ${MODIFIED_OPENSSL_LIBRARIES}")
     file(COPY ${MODIFIED_OPENSSL_LIBRARIES} DESTINATION ${CMAKE_CURRENT_BINARY_DIR} FOLLOW_SYMLINK_CHAIN)
-
     target_link_libraries(std wsock32 ws2_32)
 else()
     set(MODIFIED_OPENSSL_LIBRARIES ${OPENSSL_LIBRARIES})
