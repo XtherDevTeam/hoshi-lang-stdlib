@@ -1,0 +1,268 @@
+use sqlite "sqlite"
+use str "str"
+use lang "builtin"
+use vec "vec"
+use types "types"
+use crypto "crypto" 
+use fs "fs"
+
+enum ResultCode {
+    Success,
+    DatabaseNotInitialized,
+    UserAlreadyExists,
+    UserNotFound,
+    InvalidQuery
+}
+
+struct DataProviderHelper {
+    constructor(),
+    static convert_row_to_user(row: sqlite.SQLRowResult) : types.User,
+    static convert_row_to_package_information(row: sqlite.SQLRowResult) : types.PackageInformation,
+    static convert_row_to_config(row: sqlite.SQLRowResult) : types.Config
+}
+
+impl DataProviderHelper {
+    constructor() {
+        return this
+    },
+    static convert_row_to_user(row: sqlite.SQLRowResult) : types.User {
+        return types.User()
+            .set_id(dyn_cast<int>(row["id"]))
+            .set_username(dyn_cast<str.Str>(row["username"]))
+            .set_password_salted(dyn_cast<str.Str>(row["password_salted"]))
+            .set_email(dyn_cast<str.Str>(row["email"]))
+            .set_description(dyn_cast<str.Str>(row["description"]))
+            .set_permission(dyn_cast<int>(row["permission"]))
+    },
+    static convert_row_to_package_information(row: sqlite.SQLRowResult) : types.PackageInformation {
+        return types.PackageInformation()
+            .set_id(dyn_cast<int>(row["id"]))
+            .set_name(dyn_cast<str.Str>(row["name"]))
+            .set_author(dyn_cast<str.Str>(row["author"]))
+            .set_description(dyn_cast<str.Str>(row["description"]))
+            .set_repository(dyn_cast<str.Str>(row["repository"]))
+            .set_license(dyn_cast<str.Str>(row["license"]))
+    },
+    static convert_row_to_config(row: sqlite.SQLRowResult) : types.Config {
+        return types.Config()
+            .set_host(dyn_cast<str.Str>(row["host"]))
+            .set_port(dyn_cast<int>(row["port"]))
+            .set_artifacts_dir(dyn_cast<str.Str>(row["artifacts_dir"]))
+    }
+}
+
+struct DataProvider {
+    db: sqlite.Database,
+    path: str.Str,
+    constructor(path: str.Str),
+    init() : bool,
+    check_if_initialized() : bool,
+    add_user(username: str.Str, password: str.Str) : ResultCode,
+    auth_user(username: str.Str, password: str.Str) : bool,
+    update_user_password(id: int, new_password: str.Str) : ResultCode,
+    delete_user(id: int) : ResultCode,
+    update_user(id: int, description: str.Str, email: str.Str, permission: int) : ResultCode,
+    register_package(name: str.Str, author: str.Str, description: str.Str, repository: str.Str, license: str.Str) : ResultCode,
+    get_user_by_id(id: int) : lang.Result<types.User, ResultCode>,
+    get_user_by_username(username: str.Str) : lang.Result<types.User, ResultCode>,
+    get_user_packages(id: int) : lang.Result<vec.Vec<types.PackageInformation>, ResultCode>,
+    get_package_list() : lang.Result<vec.Vec<types.PackageInformation>, ResultCode>,
+    get_package_by_name(name: str.Str) : lang.Result<types.PackageInformation, ResultCode>,
+    get_package_by_id(id: int) : lang.Result<types.PackageInformation, ResultCode>,
+    update_package(id: int, name: str.Str, author: str.Str, description: str.Str, repository: str.Str, license: str.Str) : lang.Result<bool, ResultCode>,
+    delete_package(id: int) : lang.Result<bool, ResultCode>,
+    get_config() : lang.Result<types.Config, ResultCode>,
+}
+
+impl DataProvider {
+    constructor(path: str.Str) {
+        this.path = path
+        this.db = sqlite.open(path).unwrap()
+    },
+    init() : bool {
+        if (this.check_if_initialized()) {
+            return true
+        }
+        let fp = fs.open("share/scheme.sql", "r+").unwrap()
+        if (this.db.execute_batch(str.Str(fp.read(fp.size()).data)).is_err()) {
+            return false
+        }
+        return true
+    },
+    check_if_initialized() : bool {
+        let result = this.db.execute("select * from config")
+        return result.is_err() == false
+    },
+    add_user(username: str.Str, password: str.Str) : ResultCode {
+        let salted = str.format("{}:pardo-server", password)
+        let salted_md5 = crypto.hash.Hash.md5().feed(salted.data, salted.length).final().hexdigest()
+        let query = this.db.execute("insert into users (username, password_salted) values (?,?)", username, salted_md5)
+        if (query.is_err()) {
+            return ResultCode.InvalidQuery
+        }
+        return ResultCode.Success        
+    },
+    auth_user(username: str.Str, password: str.Str) : bool {
+        let salted = str.format("{}:pardo-server", password)
+        let salted_md5 = crypto.hash.Hash.md5().feed(salted.data, salted.length).final().hexdigest()
+        let query = this.db.execute("select id from users where username = ? and password_salted = ?", username, salted_md5)
+        if (query.is_err()) {
+            return false
+        }
+        return query.unwrap().fetch().is_err() == false
+    },
+    update_user_password(id: int, new_password: str.Str) : ResultCode {
+        let salted = str.format("{}:pardo-server", new_password)
+        let salted_md5 = crypto.hash.Hash.md5().feed(salted.data, salted.length).final().hexdigest()
+        let query = this.db.execute("update users set password_salted = ? where id = ?", salted_md5, id)
+        if (query.is_err()) {
+            return ResultCode.InvalidQuery
+        }
+        return ResultCode.Success
+    },
+    delete_user(id: int) : ResultCode {
+        let query = this.db.execute("delete from users where id = ?", id)
+        if (query.is_err()) {
+            return ResultCode.InvalidQuery
+        }
+        return ResultCode.Success
+    },
+    update_user(id: int, description: str.Str, email: str.Str, permission: int) : ResultCode {
+        let query = this.db.execute("update users set description = ?, email = ?, permission = ? where id = ?", description, email, permission, id)
+        if (query.is_err()) {
+            return ResultCode.InvalidQuery
+        }
+        return ResultCode.Success
+    },
+    register_package(name: str.Str, author: str.Str, description: str.Str, repository: str.Str, license: str.Str) : ResultCode {
+        let query = this.db.execute("insert into packages (name, author, description, repository, license) values (?,?,?,?, ?)", name, author, description, repository, license)
+        if (query.is_err()) {
+            return ResultCode.InvalidQuery
+        }
+        return ResultCode.Success
+    },
+    get_user_by_id(id: int) : lang.Result<types.User, ResultCode> {
+        let query = this.db.execute("select * from users where id = ?", id)
+        if (query.is_err()) {
+            return lang.Result<types.User, ResultCode>.err(ResultCode.InvalidQuery)
+        }
+        let result = query.unwrap().fetch_all()
+        if (result.is_err() || result.unwrap().length == 0) {
+            return lang.Result<types.User, ResultCode>.err(ResultCode.UserNotFound)
+        }
+        let row = result.unwrap()[0]
+
+        let user = DataProviderHelper.convert_row_to_user(row)
+        
+        return lang.Result<types.User, ResultCode>.ok(user)
+    },
+    get_user_by_username(username: str.Str) : lang.Result<types.User, ResultCode> {
+        let query = this.db.execute("select * from users where username = ?", username)
+        if (query.is_err()) {
+            return lang.Result<types.User, ResultCode>.err(ResultCode.InvalidQuery)
+        }
+        let result = query.unwrap().fetch_all()
+        if (result.is_err() || result.unwrap().length == 0) {
+            return lang.Result<types.User, ResultCode>.err(ResultCode.UserNotFound)
+        }
+        let row = result.unwrap()[0]
+        let user = DataProviderHelper.convert_row_to_user(row)
+        
+        return lang.Result<types.User, ResultCode>.ok(user)
+    },
+    get_user_packages(id: int) : lang.Result<vec.Vec<types.PackageInformation>, ResultCode> {
+        let query = this.db.execute("select * from packages where author_id = ?", id)
+        if (query.is_err()) {
+            return lang.Result<vec.Vec<types.PackageInformation>, ResultCode>.err(ResultCode.InvalidQuery)
+        }
+        let result = query.unwrap().fetch_all()
+        if (result.is_err()) {
+            return lang.Result<vec.Vec<types.PackageInformation>, ResultCode>.err(ResultCode.InvalidQuery)
+        }
+        let packages = vec.Vec<types.PackageInformation>()
+        for (let i = 0; i < result.unwrap().length; i += 1) {
+            let row = result.unwrap()[i]
+
+            let package = DataProviderHelper.convert_row_to_package_information(row)
+            packages.push(package)
+        }
+        return lang.Result<vec.Vec<types.PackageInformation>, ResultCode>.ok(packages)
+    },
+    get_package_list() : lang.Result<vec.Vec<types.PackageInformation>, ResultCode> {
+        let query = this.db.execute("select * from packages")
+        if (query.is_err()) {
+            return lang.Result<vec.Vec<types.PackageInformation>, ResultCode>.err(ResultCode.InvalidQuery)
+        }
+        let result = query.unwrap().fetch_all()
+        if (result.is_err()) {
+            return lang.Result<vec.Vec<types.PackageInformation>, ResultCode>.err(ResultCode.InvalidQuery)
+        }
+        let packages = vec.Vec<types.PackageInformation>()
+        for (let i = 0; i < result.unwrap().length; i += 1) {
+            let row = result.unwrap()[i]
+
+            let package = DataProviderHelper.convert_row_to_package_information(row)
+            packages.push(package)
+        }
+        return lang.Result<vec.Vec<types.PackageInformation>, ResultCode>.ok(packages)
+    },
+    get_package_by_name(name: str.Str) : lang.Result<types.PackageInformation, ResultCode> {
+        let query = this.db.execute("select * from packages where name = ?", name)
+        if (query.is_err()) {
+            return lang.Result<types.PackageInformation, ResultCode>.err(ResultCode.InvalidQuery)
+        }
+        let result = query.unwrap().fetch_all()
+        if (result.is_err() || result.unwrap().length == 0) {
+            return lang.Result<types.PackageInformation, ResultCode>.err(ResultCode.UserNotFound)
+        }
+        let row = result.unwrap()[0]
+
+        let package = DataProviderHelper.convert_row_to_package_information(row)
+        
+        return lang.Result<types.PackageInformation, ResultCode>.ok(package)
+    },
+    get_package_by_id(id: int) : lang.Result<types.PackageInformation, ResultCode> {
+        let query = this.db.execute("select * from packages where id = ?", id)
+        if (query.is_err()) {
+            return lang.Result<types.PackageInformation, ResultCode>.err(ResultCode.InvalidQuery)
+        }
+        let result = query.unwrap().fetch_all()
+        if (result.is_err() || result.unwrap().length == 0) {
+            return lang.Result<types.PackageInformation, ResultCode>.err(ResultCode.UserNotFound)
+        }
+        let row = result.unwrap()[0]
+
+        let package = DataProviderHelper.convert_row_to_package_information(row)
+        
+        return lang.Result<types.PackageInformation, ResultCode>.ok(package)
+    },
+    update_package(id: int, name: str.Str, author: str.Str, description: str.Str, repository: str.Str, license: str.Str) : lang.Result<bool, ResultCode> {
+        let query = this.db.execute("update packages set name = ?, author = ?, description = ?, repository = ?, license = ? where id = ?", name, author, description, repository, license, id)
+        if (query.is_err()) {
+            return lang.Result<bool, ResultCode>.err(ResultCode.InvalidQuery)
+        }
+        return lang.Result<bool, ResultCode>.ok(true)
+    },
+    delete_package(id: int) : lang.Result<bool, ResultCode> {
+        let query = this.db.execute("delete from packages where id = ?", id)
+        if (query.is_err()) {
+            return lang.Result<bool, ResultCode>.err(ResultCode.InvalidQuery)
+        }
+        return lang.Result<bool, ResultCode>.ok(true)
+    },
+    get_config() : lang.Result<types.Config, ResultCode> {
+        let query = this.db.execute("select * from config")
+        if (query.is_err()) {
+            return lang.Result<types.Config, ResultCode>.err(ResultCode.InvalidQuery)
+        }
+        let result = query.unwrap().fetch_all()
+        if (result.is_err() || result.unwrap().length == 0) {
+            return lang.Result<types.Config, ResultCode>.err(ResultCode.DatabaseNotInitialized)
+        }
+        let row = result.unwrap()[0]
+
+        let config = DataProviderHelper.convert_row_to_config(row)
+        
+        return lang.Result<types.Config, ResultCode>.ok(config)
+    }
+}

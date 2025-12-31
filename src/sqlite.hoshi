@@ -119,13 +119,15 @@ impl io.ArrayBuffer : SQLBindable {
 
 impl str.Str : SQLBindable {
     bind(stmt: unsigned, index: int) : none {
-        sqlite3_bind_text(stmt, index, this.c_str(), this.length, Transient.value)
+        sqlite3_bind_text(stmt, index, runtime.runtime_get_string_array_data_pointer(this.data), this.length, Transient.value)
     }
 }
 
 struct Statement {
     pDB: unsigned,
     pStmt: unsigned,
+    rc: ResultCode,
+    preflight() : none,
     fetch() : lang.Result<SQLRowResult, ResultCode>,
     fetch_all() : lang.Result<vec.Vec<SQLRowResult>, ResultCode>,
     constructor(pDB: unsigned, pStmt: unsigned),
@@ -140,9 +142,11 @@ impl Statement {
     finalizer() {
         sqlite3_finalize(this.pStmt)
     },
+    preflight() : none {
+        this.rc = sqlite3_step(this.pStmt)
+    },
     fetch() : lang.Result<SQLRowResult, ResultCode> {
-        let rc = sqlite3_step(this.pStmt)
-        if (rc == ResultCode.SQLITE_ROW) {
+        if (this.rc == ResultCode.SQLITE_ROW) {
             let row = SQLRowResult()
             let colCount = sqlite3_column_count(this.pStmt)
             for (let i = 0;i < colCount;i += 1) {
@@ -164,16 +168,16 @@ impl Statement {
                 }
                 row[colName] = colValue
             }
+            this.rc = sqlite3_step(this.pStmt)
             return lang.Result<SQLRowResult, ResultCode>.ok(row)
         } else {
-            return lang.Result<SQLRowResult, ResultCode>.err(rc)
+            return lang.Result<SQLRowResult, ResultCode>.err(this.rc)
         }
     },
     fetch_all() : lang.Result<vec.Vec<SQLRowResult>, ResultCode> {
         let rows = vec.Vec<SQLRowResult>()
         while (true) {
-            let rc = sqlite3_step(this.pStmt)
-            if (rc == ResultCode.SQLITE_ROW) {
+            if (this.rc == ResultCode.SQLITE_ROW) {
                 let row = SQLRowResult()
                 let colCount = sqlite3_column_count(this.pStmt)
                 for (let i = 0;i < colCount;i += 1) {
@@ -196,10 +200,11 @@ impl Statement {
                     row[colName] = colValue
                 }
                 rows.push(row)
-            } elif (rc == ResultCode.SQLITE_DONE) {
+                this.rc = sqlite3_step(this.pStmt)
+            } elif (this.rc == ResultCode.SQLITE_DONE) {
                 break
             } else {
-                return lang.Result<vec.Vec<SQLRowResult>, ResultCode>.err(rc)
+                return lang.Result<vec.Vec<SQLRowResult>, ResultCode>.err(this.rc)
             }
         }
         return lang.Result<vec.Vec<SQLRowResult>, ResultCode>.ok(rows)
@@ -259,7 +264,12 @@ impl Database {
         for (let i = 0;i < params.length;i += 1) {
             params[i].bind(stmt.pStmt, i + 1)
         }
-        return lang.Result<Statement, ResultCode>.ok(stmt)
+        stmt.preflight()
+        if (stmt.rc == ResultCode.SQLITE_DONE || stmt.rc == ResultCode.SQLITE_ROW) {
+            return lang.Result<Statement, ResultCode>.ok(stmt)
+        } else {
+            return lang.Result<Statement, ResultCode>.err(stmt.rc)
+        }
     },
     execute_batch(sql: str.Str) : lang.Result<bool, ResultCode> {
         let rc = sqlite3_exec(this.handle, sql.c_str(), 0, 0, 0)

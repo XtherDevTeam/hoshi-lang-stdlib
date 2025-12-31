@@ -1,0 +1,89 @@
+use net "net"
+use str "str"
+use console "console"
+use runtime "runtime"
+use kiana "kiana"
+use http "net/http"
+use hashMap "hashMap"
+use json "json"
+use fs "fs"
+use file "file"
+use jwt "jwt"
+use time "time"
+use dataProvider "share/dataProvider"
+use context "share/context"
+use types "share/types"
+
+let pcontext : context.PardoServerContext = null
+let applicaton : kiana.application.Application = null
+let data_provider : dataProvider.DataProvider = null
+
+func check_admin_status() : none {
+    let [_, err] = data_provider.get_user_by_username("jerry_chou")
+    if (err != null) {
+        pcontext.logger.log("No admin user found, creating one...")
+        if (data_provider.add_user("jerry_chou", "<placeholder>") != dataProvider.ResultCode.Success) {
+            pcontext.logger.error("Failed to create admin user: unable to add user")
+            pcontext.logger.error(data_provider.db.error_message())
+            return
+        }
+
+        let [user, err] = data_provider.get_user_by_username("jerry_chou")
+        if (err != null) {
+            pcontext.logger.error("Failed to create admin user")
+            return
+        }
+            
+        data_provider.update_user_password(user.id, console.input("Enter admin password:"))
+
+        data_provider.update_user(
+            user.id,
+            "May all the beauty be blessed.",
+            "zhouyongkang4321@gmail.com",
+            types.Permission.Administrator
+        )
+        pcontext.logger.log("Admin user created")
+    }
+}
+
+func root(req: kiana.request.Request) : kiana.response.Response {
+    return kiana.response.Response(
+        http.HTTPResponseHeader("HTTP/1.1", 200, "OK"),
+        json.JSONDict()
+            .put("server", str.Str("pardo-package-manager-remote-server"))
+            .put("api", json.Numeric(1))
+            .put("status", str.Str("ok")) as json.JSONValue
+    )
+}
+
+func main() : int {
+    data_provider = dataProvider.DataProvider("blob/database.db")
+    pcontext = context.PardoServerContext()
+    pcontext.logger.log("pardo-server started")
+    pcontext.logger.log("checking database status")
+    if (data_provider.check_if_initialized() == false) {
+        pcontext.logger.warn("database not initialized, initializing...")
+        if (data_provider.init() == false) {
+            pcontext.logger.error("database initialization failed")
+            return 1
+        }
+        pcontext.logger.log("database initialized")
+    }
+    let [config, err] = data_provider.get_config()
+    if (err != null) {
+        pcontext.logger.error("failed to get config")
+        return 1
+    }
+    check_admin_status()
+    
+    pcontext.config = config
+    pcontext.logger.log("config loaded")
+    applicaton = kiana.application.Application(
+        kiana.application.ApplicationConfig(config.host, config.port)
+    )
+    applicaton.logger = pcontext.logger
+    applicaton.use_route("/", func root)
+    applicaton.serve()
+
+    return 0
+}

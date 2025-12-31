@@ -4,3 +4,5 @@ build*/*
 test
 .vscode
 *.log
+*.db
+pardo-server/pardo-server

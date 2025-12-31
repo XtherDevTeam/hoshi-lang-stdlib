@@ -1,0 +1,16 @@
+use logger "logger"
+use str "str"
+use types "share/types"
+
+struct PardoServerContext {
+    logger: logger.Logger,
+    config: types.Config,
+    constructor()
+}
+
+impl PardoServerContext {
+    constructor() {
+        this.logger = logger.ConsoleLogger(logger.Severity.INFO)
+        return this
+    }
+}

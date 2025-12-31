@@ -1,0 +1,260 @@
+use str "str"
+use vec "vec"
+use json "json"
+
+enum Permission {
+    Administrator = 0,
+    User = 1
+}
+
+struct Config {
+    host: str.Str,
+    port: int,
+    artifacts_dir: str.Str,
+    constructor(host: str.Str, port: int, artifacts_dir: str.Str),
+    constructor(),
+    set_host(host: str.Str) : Config,
+    set_port(port: int) : Config,
+    set_artifacts_dir(artifacts_dir: str.Str) : Config
+}
+
+impl Config {
+    constructor(host: str.Str, port: int, artifacts_dir: str.Str) {
+        this.host = host
+        this.port = port
+        this.artifacts_dir = artifacts_dir
+    },
+    constructor() {
+        return this
+    },
+    set_host(host: str.Str) : Config {
+        this.host = host
+        return this
+    },
+    set_port(port: int) : Config {
+        this.port = port
+        return this
+    },
+    set_artifacts_dir(artifacts_dir: str.Str) : Config {
+        this.artifacts_dir = artifacts_dir
+        return this
+    }
+}
+
+struct PardoJWTClaims {
+    user: int,
+    exp: int,
+    constructor(user: int, exp: int),
+    constructor(),
+    set_user(user: int) : PardoJWTClaims,
+    set_exp(exp: int) : PardoJWTClaims
+}
+
+impl PardoJWTClaims {
+    constructor(user: int, exp: int) {
+        this.user = user
+        this.exp = exp
+    },
+    constructor() {
+    },
+    set_user(user: int) : PardoJWTClaims {
+        this.user = user
+        return this
+    },
+    set_exp(exp: int) : PardoJWTClaims {
+        this.exp = exp
+        return this
+    }
+}
+
+struct User {
+    id: int,
+    username: str.Str,
+    password_salted: str.Str,
+    description: str.Str,
+    email: str.Str,
+    permission: int,
+    constructor(username: str.Str, password_salted: str.Str, description: str.Str, email: str.Str, permission: int),
+    constructor(),
+    set_id(id: int) : User,
+    set_username(username: str.Str) : User,
+    set_password_salted(password_salted: str.Str) : User,
+    set_description(description: str.Str) : User,
+    set_email(email: str.Str) : User,
+    set_permission(permission: int) : User,
+    to_json(): json.JSONValue
+}
+
+struct PackageInformation {
+    id: int,
+    name: str.Str,
+    author: str.Str,
+    description: str.Str,
+    repository: str.Str,
+    license: str.Str,
+    versions: str.Str,
+    constructor(name: str.Str, versions: str.Str, author: str.Str, description: str.Str, repository: str.Str, license: str.Str),
+    constructor(),
+    set_id(id: int) : PackageInformation,
+    set_name(name: str.Str) : PackageInformation,
+    set_author(author: str.Str) : PackageInformation,
+    set_description(description: str.Str) : PackageInformation,
+    set_repository(repository: str.Str) : PackageInformation,
+    set_license(license: str.Str) : PackageInformation,
+    set_versions(versions: str.Str) : PackageInformation,
+    to_json(): json.JSONValue,
+    static from_json(json: str.Str) : PackageInformation
+}
+
+impl PackageInformation {
+    constructor(name: str.Str, versions: str.Str, author: str.Str, description: str.Str, repository: str.Str, license: str.Str) {
+        this.name = name
+        this.versions = versions
+        this.author = author
+        this.description = description
+        this.repository = repository
+        this.license = license
+        this.id = 0
+    },
+    constructor() {
+    },
+    set_id(id: int) : PackageInformation {
+        this.id = id
+        return this
+    },
+    set_name(name: str.Str) : PackageInformation {
+        this.name = name
+        return this
+    },
+    set_author(author: str.Str) : PackageInformation {
+        this.author = author
+        return this
+    },
+    set_description(description: str.Str) : PackageInformation {
+        this.description = description
+        return this
+    },
+    set_repository(repository: str.Str) : PackageInformation {
+        this.repository = repository
+        return this
+    },
+    set_license(license: str.Str) : PackageInformation {
+        this.license = license
+        return this
+    },
+    set_versions(versions: str.Str) : PackageInformation {
+        this.versions = versions
+        return this
+    },
+    to_json() : str.Str {
+        return json.JSONDict()
+            .put("id", json.Numeric(this.id))
+            .put("name", this.name)
+            .put("author", this.author)
+            .put("description", this.description)
+            .put("repository", this.repository)
+            .put("license", this.license)
+            .put("versions", json.parse(this.versions).unwrap())
+    }
+}
+
+impl User {
+    constructor(username: str.Str, password_salted: str.Str, description: str.Str, email: str.Str, permission: int) {
+        this.username = username
+        this.password_salted = password_salted
+        this.description = description
+        this.email = email
+        this.permission = permission
+    },
+    constructor() {
+        return this
+    },
+    set_id(id: int) : User {
+        this.id = id
+        return this
+    },
+    set_username(username: str.Str) : User {
+        this.username = username
+        return this
+    },
+    set_password_salted(password_salted: str.Str) : User {
+        this.password_salted = password_salted
+        return this
+    },
+    set_description(description: str.Str) : User {
+        this.description = description
+        return this
+    },
+    set_email(email: str.Str) : User {
+        this.email = email
+        return this
+    },
+    set_permission(permission: int) : User {
+        this.permission = permission
+        return this
+    },
+    to_json() : str.Str {
+        return json.JSONDict()
+            .put("id", json.Numeric(this.id))
+            .put("username", this.username)
+            .put("password_salted", this.password_salted)
+            .put("description", this.description)
+            .put("email", this.email)
+            .put("permission", json.Numeric(this.permission))
+    }
+}
+
+struct Artifact {
+    id: int,
+    package_id: int,
+    filename: str.Str,
+    mime: str.Str,
+    destination: str.Str,
+    constructor(package_id: int, filename: str.Str, mime: str.Str, destination: str.Str),
+    constructor(),
+    set_id(id: int) : Artifact,
+    set_package_id(package_id: int) : Artifact,
+    set_filename(filename: str.Str) : Artifact,
+    set_mime(mime: str.Str) : Artifact,
+    set_destination(destination: str.Str) : Artifact,
+    to_json(): json.JSONValue
+}
+
+impl Artifact {
+    constructor(package_id: int, filename: str.Str, mime: str.Str, destination: str.Str) {
+        this.package_id = package_id
+        this.filename = filename
+        this.mime = mime
+        this.destination = destination
+    },
+    constructor() {
+    },
+    set_id(id: int) : Artifact {
+        this.id = id
+        return this
+    },
+    set_package_id(package_id: int) : Artifact {
+        this.package_id = package_id
+        return this
+    },
+    set_filename(filename: str.Str) : Artifact {
+        this.filename = filename
+        return this
+    },
+    set_mime(mime: str.Str) : Artifact {
+        this.mime = mime
+        return this
+    },
+    set_destination(destination: str.Str) : Artifact {
+        this.destination = destination
+        return this
+    },
+    to_json() : json.JSONValue {
+        return json.JSONDict()
+            .put("id", json.Numeric(this.id))
+            .put("package_id", json.Numeric(this.package_id))
+            .put("filename", this.filename)
+            .put("mime", this.mime)
+            .put("destination", this.destination)
+    }
+}
