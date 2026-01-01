@@ -4,10 +4,16 @@ use socket "net/socket"
 use http "net/http"
 use io "io"
 use lang "builtin"
+use json "json"
+use math "math"
+use runtime "runtime"
+use console "console"
 
 enum ResultCode {
     INVALID_HTTP_HEADER,
-    INVALID_CONTENT
+    BAD_RESPONSE,
+    INVALID_CONTENT,
+    MISMATCH_CONTENT_TYPE,
 }
 
 struct ResourceTarget {
@@ -55,6 +61,7 @@ struct Request {
     getch() : char,
     recv_next_raw_content() : lang.Result<io.ArrayBuffer, http.HTTPNetworkError>,
     recv_header() : lang.Result<Request, ResultCode>,
+    iterate_chunk() : io.ArrayBuffer,
     json() : lang.Result<json.JSONValue, ResultCode>,
     text() : lang.Result<str.Str, ResultCode>
 }
@@ -76,6 +83,134 @@ impl Request {
         }
         this.cached_recv = buf
         return lang.Result<io.ArrayBuffer, http.HTTPNetworkError>.ok(buf)
+    },
+    iterate_chunk() : io.ArrayBuffer {
+        if (this.headers.headers.contains("transfer-encoding") == false || this.headers.headers["transfer-encoding"] != "chunked") {
+            return null
+        }
+        let chunk_size = 0
+        let current_ch = this.getch()
+        while ((current_ch >= '0' && current_ch <= '9') || (current_ch >= 'a' && current_ch <= 'f') || (current_ch >= 'A' && current_ch <= 'F')) {
+            chunk_size = chunk_size * 16 + math.hextoint(current_ch)
+            current_ch = this.getch()
+        }
+        if (current_ch != '\r' || this.getch() != '\n') {
+            return null
+        }
+        let chunk_data = io.ArrayBuffer(chunk_size)
+        let current_pos = 0
+
+        let bytes_to_copy_from_cache = math.min(chunk_size, this.cached_recv.size - this.cached_recv.current_pos)
+
+        if (bytes_to_copy_from_cache > 0) {
+            runtime.memcpy(runtime.runtime_get_string_array_data_pointer(chunk_data.buf), runtime.runtime_get_string_array_data_pointer(this.cached_recv.buf) + this.cached_recv.current_pos, bytes_to_copy_from_cache)
+        }
+
+        current_pos = bytes_to_copy_from_cache
+        this.cached_recv.current_pos += bytes_to_copy_from_cache
+
+        while (current_pos < chunk_size) {
+            let result = this.recv_next_raw_content()
+            if (result.is_err()) {
+                return null
+            }
+            let buf = result.unwrap()
+            if (buf.size == 0) {
+                return null
+            }
+            // if current_pos + buf.size is larger than chunk_size, we need to move its position to the end_pos and break
+            let actual_read = math.min(chunk_size - current_pos, buf.size)
+            runtime.memcpy(runtime.runtime_get_string_array_data_pointer(chunk_data.buf) + current_pos, runtime.runtime_get_string_array_data_pointer(buf.buf), actual_read)
+            current_pos += actual_read
+            if (actual_read < buf.size) {
+                this.cached_recv.current_pos = actual_read
+            }
+        }
+        // all data received, return
+        if (this.getch() != '\r' || this.getch() != '\n') {
+            return null
+        }
+        return chunk_data
+    },
+    text() : lang.Result<str.Str, http.HTTPNetworkError> {
+        // check if chunked encoding is used
+        if (this.headers.headers.contains("transfer-encoding") != false && this.headers.headers["transfer-encoding"] == "chunked") {
+            let final = str.Str(65536u)
+            while (true) {
+                let chunk = this.iterate_chunk()
+                if (chunk == null) {
+                    return lang.Result<str.Str, http.HTTPNetworkError>.err(http.HTTPNetworkError.CONNECTION_RESET)
+                }
+                if (chunk.size == 0) {
+                    break
+                }
+                final += chunk.buf
+            }
+            return lang.Result<str.Str, http.HTTPNetworkError>.ok(final)
+        } elif (this.headers.headers.contains("content-length") != false) {
+            let content_length = str.toInt(this.headers.headers["content-length"])
+            if (content_length == 0) {
+                return lang.Result<str.Str, http.HTTPNetworkError>.ok("")
+            }
+            let content = str.Str(content_length as unsigned)
+            let current_pos = 0
+            // if content length is larger than the remaining data, we need to read more data from the socket, but before that, we read the remaining data into the content buffer
+            runtime.memcpy(runtime.runtime_get_string_array_data_pointer(content.data), runtime.runtime_get_string_array_data_pointer(this.cached_recv.buf) + this.cached_recv.current_pos, this.cached_recv.size - this.cached_recv.current_pos)
+            current_pos = this.cached_recv.size - this.cached_recv.current_pos
+            while (current_pos < content_length) {
+                let result = this.recv_next_raw_content()
+                if (result.is_err()) {
+                    return lang.Result<str.Str, http.HTTPNetworkError>.err(result.unwrap_err())
+                }
+                let buf = result.unwrap()
+                if (buf.size == 0) {
+                    return lang.Result<str.Str, http.HTTPNetworkError>.err(http.HTTPNetworkError.CONNECTION_RESET)
+                }
+                let actual_read = math.min((content_length - current_pos) as unsigned, buf.size as unsigned)
+                runtime.memcpy(runtime.runtime_get_string_array_data_pointer(content.data) + current_pos, runtime.runtime_get_string_array_data_pointer(buf.buf), actual_read)
+                current_pos += actual_read
+                if (actual_read < buf.size) {
+                    this.cached_recv.current_pos = actual_read
+                    break
+                }
+            }
+            content.length = content_length
+            return lang.Result<str.Str, http.HTTPNetworkError>.ok(content)
+        } else {
+            let content = str.Str(65536u)
+            // if chunk size is larger than the remaining data, we need to read more data from the socket, but before that, we read the remaining data into the chunk buffer
+            runtime.memcpy(runtime.runtime_get_string_array_data_pointer(content.data), runtime.runtime_get_string_array_data_pointer(this.cached_recv.buf) + this.cached_recv.current_pos, this.cached_recv.size - this.cached_recv.current_pos)
+            content.length = this.cached_recv.size - this.cached_recv.current_pos
+            while (true) {
+                let result = this.recv_next_raw_content()
+                if (result.is_err()) {
+                    return lang.Result<str.Str, http.HTTPNetworkError>.err(result.unwrap_err())
+                }
+                let buf = result.unwrap()
+                if (buf.size == 0) {
+                    return lang.Result<str.Str, http.HTTPNetworkError>.err(http.HTTPNetworkError.CONNECTION_RESET)
+                }
+                content += buf.buf
+                if (buf.size < 1024) {
+                    break
+                }
+            }
+            return lang.Result<str.Str, http.HTTPNetworkError>.ok(content)
+        }
+    },
+    json() : lang.Result<json.JSONValue, ResultCode> {
+        if (this.headers.headers.contains("content-type") == false || this.headers.headers["content-type"].startswith("application/json") == false) {
+            return lang.Result<json.JSONValue, ResultCode>.err(ResultCode.MISMATCH_CONTENT_TYPE)
+        }
+        let [content, err] = this.text()
+        if (err != null) {
+            return lang.Result<json.JSONValue, ResultCode>.err(ResultCode.BAD_RESPONSE)
+        }
+        let [parsed, err] = json.parse(content)
+        if (err != null) {
+            return lang.Result<json.JSONValue, ResultCode>.err(ResultCode.BAD_RESPONSE)
+        }
+        return lang.Result<json.JSONValue, ResultCode>.ok(parsed)
     },
     getch() : char {
         if (this.cached_recv == null || this.cached_recv.current_pos >= this.cached_recv.size) {

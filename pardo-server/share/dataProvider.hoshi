@@ -59,7 +59,7 @@ struct DataProvider {
     init() : bool,
     check_if_initialized() : bool,
     add_user(username: str.Str, password: str.Str) : ResultCode,
-    auth_user(username: str.Str, password: str.Str) : bool,
+    auth_user(username: str.Str, password: str.Str) : lang.Result<int, ResultCode>,
     update_user_password(id: int, new_password: str.Str) : ResultCode,
     delete_user(id: int) : ResultCode,
     update_user(id: int, description: str.Str, email: str.Str, permission: int) : ResultCode,
@@ -103,14 +103,20 @@ impl DataProvider {
         }
         return ResultCode.Success        
     },
-    auth_user(username: str.Str, password: str.Str) : bool {
+    auth_user(username: str.Str, password: str.Str) : lang.Result<int, ResultCode> {
         let salted = str.format("{}:pardo-server", password)
         let salted_md5 = crypto.hash.Hash.md5().feed(salted.data, salted.length).final().hexdigest()
         let query = this.db.execute("select id from users where username = ? and password_salted = ?", username, salted_md5)
         if (query.is_err()) {
-            return false
+            return lang.Result<int, ResultCode>.err(ResultCode.InvalidQuery)
         }
-        return query.unwrap().fetch().is_err() == false
+        let [result, err] = query.unwrap().fetch()
+        if (err != null) {
+            // mismatch username or password
+            return lang.Result<int, ResultCode>.err(ResultCode.InvalidQuery)
+        } else {
+            return lang.Result<int, ResultCode>.ok(dyn_cast<int>(result["id"]))
+        }
     },
     update_user_password(id: int, new_password: str.Str) : ResultCode {
         let salted = str.format("{}:pardo-server", new_password)

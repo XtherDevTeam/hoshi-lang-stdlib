@@ -56,7 +56,7 @@ struct PardoJWTClaims {
     set_user(user: int) : PardoJWTClaims,
     set_exp(exp: int) : PardoJWTClaims,
     static from_json(v: json.JSONDict) : PardoJWTClaims,
-    to_json(): json.JSONValue
+    to_json(): json.JSONDict
 }
 
 impl PardoJWTClaims {
@@ -82,7 +82,7 @@ impl PardoJWTClaims {
         }
         return PardoJWTClaims(user.getInt(), exp.getInt())
     },
-    to_json() : json.JSONValue {
+    to_json() : json.JSONDict {
         return json.JSONDict()
             .put("user", json.Numeric(this.user))
             .put("exp", json.Numeric(this.exp))

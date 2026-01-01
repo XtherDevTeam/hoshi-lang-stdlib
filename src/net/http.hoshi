@@ -141,7 +141,7 @@ func parseHTTPRequestHeader(s: str.Str) : lang.Result<HTTPRequestHeader, HTTPHea
             break
         }
         let header_name = header_line.substring(0, colon_index).lowercase()
-        let header_value = header_line.substring(colon_index + 1, header_line.length)
+        let header_value = header_line.substring(colon_index + 2, header_line.length)
         headers[header_name] = header_value
         header_start = header_end + 2
     }

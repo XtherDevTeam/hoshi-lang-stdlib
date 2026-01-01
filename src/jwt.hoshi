@@ -100,6 +100,7 @@ struct JWTBuilder {
     constructor(alg : JWTHashAlgorithm, payload : json.JSONDict),
     constructor(alg : JWTHashAlgorithm),
     add_claim(name : str.Str, value : json.JSONValue) : JWTBuilder,
+    set_claim(claims: json.JSONDict) : JWTBuilder,
     yield() : JWT
 }
 
@@ -113,6 +114,10 @@ impl JWTBuilder {
         this.typ = "JWT"
         this.alg = alg
         this.payload = json.JSONDict()
+    },
+    set_claim(claims: json.JSONDict) : JWTBuilder {
+        this.payload = claims
+        return this
     },
     add_claim(name : str.Str, value : json.JSONValue) : JWTBuilder {
         this.payload[name] = value

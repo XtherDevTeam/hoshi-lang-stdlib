@@ -42,3 +42,9 @@ package:
 	cp -r hoshi-lang/lib/* build-package/lib/
 	cp -r src/* build-package/lib/
 	cp LICENSE build-package/
+
+install-libs:
+	cp -v cmake-build-release/*crypto* $(HOSHI_HOME)/bin
+	cp -v cmake-build-release/*ssl* $(HOSHI_HOME)/bin
+	cp -v cmake-build-release/*std* $(HOSHI_HOME)/bin
+	cp -v -r src/* $(HOSHI_HOME)/lib
