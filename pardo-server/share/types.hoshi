@@ -11,20 +11,27 @@ struct Config {
     host: str.Str,
     port: int,
     artifacts_dir: str.Str,
-    constructor(host: str.Str, port: int, artifacts_dir: str.Str),
+    secret_key: str.Str,
+    constructor(host: str.Str, port: int, artifacts_dir: str.Str, secret_key: str.Str),
     constructor(),
     set_host(host: str.Str) : Config,
     set_port(port: int) : Config,
-    set_artifacts_dir(artifacts_dir: str.Str) : Config
+    set_artifacts_dir(artifacts_dir: str.Str) : Config,
+    set_secret_key(secret_key: str.Str) : Config
 }
 
 impl Config {
-    constructor(host: str.Str, port: int, artifacts_dir: str.Str) {
+    constructor(host: str.Str, port: int, artifacts_dir: str.Str, secret_key: str.Str) {
         this.host = host
         this.port = port
         this.artifacts_dir = artifacts_dir
+        this.secret_key = secret_key
     },
     constructor() {
+        return this
+    },
+    set_secret_key(secret_key: str.Str) : Config {
+        this.secret_key = secret_key
         return this
     },
     set_host(host: str.Str) : Config {
@@ -47,7 +54,9 @@ struct PardoJWTClaims {
     constructor(user: int, exp: int),
     constructor(),
     set_user(user: int) : PardoJWTClaims,
-    set_exp(exp: int) : PardoJWTClaims
+    set_exp(exp: int) : PardoJWTClaims,
+    static from_json(v: json.JSONDict) : PardoJWTClaims,
+    to_json(): json.JSONValue
 }
 
 impl PardoJWTClaims {
@@ -64,6 +73,19 @@ impl PardoJWTClaims {
     set_exp(exp: int) : PardoJWTClaims {
         this.exp = exp
         return this
+    },
+    static from_json(v: json.JSONDict) : PardoJWTClaims {
+        let user = dyn_cast<json.Numeric>(v["user"])
+        let exp = dyn_cast<json.Numeric>(v["exp"])
+        if (user == null || exp == null) {
+            return null
+        }
+        return PardoJWTClaims(user.getInt(), exp.getInt())
+    },
+    to_json() : json.JSONValue {
+        return json.JSONDict()
+            .put("user", json.Numeric(this.user))
+            .put("exp", json.Numeric(this.exp))
     }
 }
 

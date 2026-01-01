@@ -13,9 +13,10 @@ use time "time"
 use dataProvider "share/dataProvider"
 use context "share/context"
 use types "share/types"
+use lang "builtin"
 
 let pcontext : context.PardoServerContext = null
-let applicaton : kiana.application.Application = null
+let application : kiana.application.Application = null
 let data_provider : dataProvider.DataProvider = null
 
 func check_admin_status() : none {
@@ -46,6 +47,15 @@ func check_admin_status() : none {
     }
 }
 
+func make_error_response(message: str.Str) : kiana.response.Response {
+    return kiana.response.Response(
+        http.HTTPResponseHeader("HTTP/1.1", 200, "OK"),
+        json.JSONDict()
+            .put("status", str.Str("error"))
+            .put("message", message) as json.JSONValue
+    )
+}
+
 func root(req: kiana.request.Request) : kiana.response.Response {
     return kiana.response.Response(
         http.HTTPResponseHeader("HTTP/1.1", 200, "OK"),
@@ -54,6 +64,37 @@ func root(req: kiana.request.Request) : kiana.response.Response {
             .put("api", json.Numeric(1))
             .put("status", str.Str("ok")) as json.JSONValue
     )
+}
+
+func post_authentication_for_admin_route(req: kiana.request.Request) : lang.Result<kiana.request.Request, kiana.response.Response> {
+    if (req.target.target.startswith("/admin")) {
+        if (req.headers.headers.contains("cookie") == false) {
+            return lang.Result<kiana.request.Request, kiana.response.Response>.err(make_error_response("not authenticated"))
+        }
+        let [cookie, err] = kiana.cookie.parse(req.headers.headers["cookie"])
+        if (err != null || cookie.contains("pardo-session") == false) {
+            return lang.Result<kiana.request.Request, kiana.response.Response>.err(make_error_response("not authenticated"))
+        }
+        let [token, err] = jwt.extract_payload(jwt.parse(cookie.get("pardo-session")).unwrap(), jwt.HMACSHA256(pcontext.config.secret_key))
+        if (err != null) {
+            return lang.Result<kiana.request.Request, kiana.response.Response>.err(make_error_response("not authenticated"))
+        }
+        let jwtoken = types.PardoJWTClaims.from_json(token)
+        let [user, err] = data_provider.get_user_by_id(jwtoken.user)
+        if (err != null) {
+            return lang.Result<kiana.request.Request, kiana.response.Response>.err(make_error_response("invalid user"))
+        }
+        if (user.permission != types.Permission.Administrator) {
+            return lang.Result<kiana.request.Request, kiana.response.Response>.err(make_error_response("permission denied"))
+        }
+        return lang.Result<kiana.request.Request, kiana.response.Response>.ok(req)
+    } else {
+        return lang.Result<kiana.request.Request, kiana.response.Response>.ok(req)
+    }
+}
+
+func admin_add_user(req: kiana.request.Request) : kiana.response.Response {
+    
 }
 
 func main() : int {
@@ -78,12 +119,13 @@ func main() : int {
     
     pcontext.config = config
     pcontext.logger.log("config loaded")
-    applicaton = kiana.application.Application(
+    application = kiana.application.Application(
         kiana.application.ApplicationConfig(config.host, config.port)
     )
-    applicaton.logger = pcontext.logger
-    applicaton.use_route("/", func root)
-    applicaton.serve()
+    application.logger = pcontext.logger
+    application.use_before_request(func post_authentication_for_admin_route)
+    application.use_route("/", func root)
+    application.serve()
 
     return 0
 }

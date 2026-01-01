@@ -1,7 +1,8 @@
 create table config (
     host            string primary key default 'localhost',
     port            integer not null default 8080,
-    artifacts_dir   string not null default 'blob/artifacts'
+    artifacts_dir   string not null default 'blob/artifacts',
+    secret_key      string not null default 'MayAllTheBeautyBeBlessed'
 );
 
 create table users (

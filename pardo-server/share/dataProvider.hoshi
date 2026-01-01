@@ -48,6 +48,7 @@ impl DataProviderHelper {
             .set_host(dyn_cast<str.Str>(row["host"]))
             .set_port(dyn_cast<int>(row["port"]))
             .set_artifacts_dir(dyn_cast<str.Str>(row["artifacts_dir"]))
+            .set_secret_key(dyn_cast<str.Str>(row["secret_key"]))
     }
 }
 
