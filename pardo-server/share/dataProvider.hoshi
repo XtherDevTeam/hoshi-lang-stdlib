@@ -73,6 +73,7 @@ struct DataProvider {
     update_package(id: int, name: str.Str, author: str.Str, description: str.Str, repository: str.Str, license: str.Str) : lang.Result<bool, ResultCode>,
     delete_package(id: int) : lang.Result<bool, ResultCode>,
     get_config() : lang.Result<types.Config, ResultCode>,
+    update_config(host: str.Str, port: int, artifacts_dir: str.Str, secret_key: str.Str) : lang.Result<bool, ResultCode>
 }
 
 impl DataProvider {
@@ -271,5 +272,12 @@ impl DataProvider {
         let config = DataProviderHelper.convert_row_to_config(row)
         
         return lang.Result<types.Config, ResultCode>.ok(config)
+    },
+    update_config(host: str.Str, port: int, artifacts_dir: str.Str, secret_key: str.Str) : lang.Result<bool, ResultCode> {
+        let query = this.db.execute("update config set host = ?, port = ?, artifacts_dir = ?, secret_key = ? where id = 1", host, port, artifacts_dir, secret_key)
+        if (query.is_err()) {
+            return lang.Result<bool, ResultCode>.err(ResultCode.InvalidQuery)
+        }
+        return lang.Result<bool, ResultCode>.ok(true)
     }
 }

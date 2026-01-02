@@ -36,6 +36,11 @@ package:
 	mkdir -p build-package/lib
 	cp hoshi-lang/cmake-build-release/*hoshi* build-package/bin
 	cp hoshi-lang/cmake-build-release/*elysia* build-package/bin
+	cp hoshi-lang/mimalloc/build/*.a build-package/bin || true
+	cp hoshi-lang/mimalloc/build/*.a build-package/bin || true
+	# explicitly ignore non-existent files
+	cp hoshi-lang/mimalloc/build/Release/*.lib build-package/bin || true
+	cp hoshi-lang/mimalloc/build/Release/*.lib build-package/bin || true
 	cp cmake-build-release/*crypto* build-package/bin
 	cp cmake-build-release/*ssl* build-package/bin
 	cp cmake-build-release/*std* build-package/bin

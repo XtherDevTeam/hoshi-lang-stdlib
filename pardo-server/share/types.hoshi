@@ -139,6 +139,7 @@ impl PackageInformation {
         this.id = 0
     },
     constructor() {
+        return this
     },
     set_id(id: int) : PackageInformation {
         this.id = id
