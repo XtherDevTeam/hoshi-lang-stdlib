@@ -124,7 +124,7 @@ func get_releases() : lang.Result<vec.Vec<ReleaseInfo>, ResultCode> {
     if (resp.is_err()) {
         return lang.Result<vec.Vec<ReleaseInfo>, ResultCode>.err(ResultCode.RequestFailed)
     }
-    let body = resp.unwrap().recv_text()
+    let body = resp.unwrap().text()
     let json_obj = json.parse(body.unwrap())
     if (json_obj.is_err() || json_obj.unwrap() interfaceof json.JSONList == false) {
         return lang.Result<vec.Vec<ReleaseInfo>, ResultCode>.err(ResultCode.InvalidResponse)
@@ -347,7 +347,7 @@ func installer(version: str.Str, dest_dir: str.Str) : str.Str {
         utils.share_context.logger.error("failed to download release asset\n")
         return 1
     }
-    utils.share_context.logger.error("successfully downloaded release asset\n")
+    utils.share_context.logger.log("successfully downloaded release asset\n")
     if (extract_release(temp_dir.to_string() + "/hoshi-lang.zip", dest_dir) != ResultCode.Success) {
         utils.share_context.logger.error("failed to extract release asset\n")
         return 1

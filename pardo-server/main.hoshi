@@ -67,7 +67,7 @@ func get_current_user_id(req: kiana.request.Request) : lang.Result<int, str.Str>
         return lang.Result<int, str.Str>.err("missing cookie")
     }
     let cookie = kiana.cookie.parse(req.headers.headers["cookie"])
-    if (cookie == null || cookie.get("pardo_session") == null) {
+    if (cookie == null || cookie.get("pardo_session") == null || cookie.get("pardo_session").trim() == "") {
         return lang.Result<int, str.Str>.err("missing session")
     }
     let [token, err] = jwt.extract_payload(jwt.parse(cookie.get("pardo_session")).unwrap(), jwt.HMACSHA256(pcontext.config.secret_key))
@@ -105,7 +105,7 @@ func post_authentication(req: kiana.request.Request) : lang.Result<kiana.request
             return lang.Result<kiana.request.Request, kiana.response.Response>.err(make_error_response("not authenticated: missing cookie header"))
         }
         let cookie = kiana.cookie.parse(req.headers.headers["cookie"])
-        if (cookie == null || cookie.get("pardo_session") == null) {
+        if (cookie == null || cookie.get("pardo_session") == null || cookie.get("pardo_session").trim() == "") {
             return lang.Result<kiana.request.Request, kiana.response.Response>.err(make_error_response("not authenticated: error parsing cookie header or missing pardo_session cookie"))
         }
         let [token, err] = jwt.extract_payload(jwt.parse(cookie.get("pardo_session")).unwrap(), jwt.HMACSHA256(pcontext.config.secret_key))
@@ -221,6 +221,21 @@ func route_login(req: kiana.request.Request) : kiana.response.Response {
         .path("/")
         .http_only(true)
         .max_age(time.Duration.days(30))
+
+    return kiana.response.Response(
+        http.HTTPResponseHeader("HTTP/1.1", 200, "OK")
+            .set_cookie(str.Stringable(cookie).to_string()),
+        json.JSONDict()
+            .put("status", str.Str("ok")) as json.JSONValue
+    )
+}
+
+// /v1/user/logout
+func route_logout(req: kiana.request.Request) : kiana.response.Response {
+    let cookie = kiana.cookie.Cookie()
+        .put("pardo_session", "")
+        .path("/")
+        .http_only(true)
 
     return kiana.response.Response(
         http.HTTPResponseHeader("HTTP/1.1", 200, "OK")
@@ -493,6 +508,7 @@ func main() : int {
     application.use_route("/v1/admin/config/update", func route_admin_set_config)
     application.use_route("/v1/admin/config/get", func route_admin_get_config)
     application.use_route("/v1/user/login", func route_login)
+    application.use_route("/v1/user/logout", func route_logout)
     application.use_route("/v1/user/info", func route_user_info)
     application.use_route("/v1/package/list", func route_package_list)
     application.use_route("/v1/package/info", func route_package_info)

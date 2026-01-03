@@ -1,0 +1,36 @@
+use net "net"
+use str "str"
+use console "console"
+use kiana "kiana"
+use http "net/http"
+use os "os"
+
+func form_data_receiver(key: str.Str, value: http.RequestReader) : none {
+    console.print("  Part: ", key, "\n")
+    let content = str.Str(100u)
+    let ch = value.getch()
+    let count = 0
+    while (ch != '\0' && count < 100) {
+        content.push(ch)
+        ch = value.getch()
+        count += 1
+    }
+    console.print("    Content (first 100 bytes): ", content, "\n")
+    if (value.is_eof() == false) {
+         console.print("    ... more content available\n")
+    }
+}
+
+func upload_handler(req: kiana.request.Request) : kiana.response.Response {
+    console.print("Received upload request\n")
+    req.form_data(func form_data_receiver)
+    return kiana.response.Response(http.HTTPResponseHeader("HTTP/1.1", 200, "OK"), str.Str("Success"))
+}
+
+func main() : int {
+    let app = kiana.application.Application(kiana.application.ApplicationConfig("127.0.0.1", 9999))
+    app.use_route("/upload", func upload_handler)
+    console.print("Server starting on 127.0.0.1:9999\n")
+    app.serve()
+    return 0
+}

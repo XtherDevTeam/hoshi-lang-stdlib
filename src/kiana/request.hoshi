@@ -63,7 +63,9 @@ struct Request {
     recv_header() : lang.Result<Request, ResultCode>,
     iterate_chunk() : io.ArrayBuffer,
     json() : lang.Result<json.JSONValue, ResultCode>,
-    text() : lang.Result<str.Str, ResultCode>
+    text() : lang.Result<str.Str, ResultCode>,
+    form_data(receiver : func(str.Str, http.RequestReader) : none) : none,
+    reader() : http.RequestReader
 }
 
 impl Request {
@@ -71,6 +73,10 @@ impl Request {
         this.headers = headers
         this.socket = socket
         this.target = ResourceTarget(headers.target)
+        this.cached_recv = io.ArrayBuffer(0)
+    },
+    reader() : http.RequestReader {
+        return http.RequestReader(this.socket, this.cached_recv, this.headers.headers)
     },
     recv_next_raw_content() : lang.Result<io.ArrayBuffer, http.HTTPNetworkError> {
         let resp = this.socket.recv(65536u)
@@ -198,6 +204,109 @@ impl Request {
             return lang.Result<str.Str, http.HTTPNetworkError>.ok(content)
         }
     },
+    form_data(receiver : func(str.Str, http.RequestReader) : none) : none {
+        if (this.headers.headers.contains("content-type") == false || this.headers.headers["content-type"].startswith("multipart/form-data") == false) {
+            return
+        }
+        let content_type = this.headers.headers["content-type"]
+        let boundary_index = content_type.find("boundary=")
+        // +9 is correct for "boundary=" length
+        let boundary = "--" + content_type.substring(boundary_index + 9, content_type.length)
+        let reader = this.reader()
+        
+        // 1. Skip preamble till first boundary
+        let line = str.Str()
+        while (reader.is_eof() == false) {
+            let ch = reader.getch()
+            if (ch == '\n') {
+                if (line.trim() == boundary) {
+                    break
+                }
+                line = str.Str()
+            } elif (ch != '\r') {
+                line.push(ch)
+            }
+        }
+
+        // 2. Process Parts
+        while (reader.is_eof() == false) {
+            // Parse headers of the part
+            let part_headers = hashMap.HashMap<str.Str, str.Str>()
+            while (true) {
+                line = str.Str()
+                while (reader.is_eof() == false) {
+                    let ch = reader.getch()
+                    if (ch == '\n') { break }
+                    if (ch != '\r') { line.push(ch) }
+                }
+                if (line.length == 0) { break } // End of headers
+                let colon = line.find(":")
+                if (colon != -1) {
+                    part_headers[line.substring(0, colon).lowercase().trim()] = line.substring(colon + 1, line.length).trim()
+                }
+            }
+
+            let name = str.Str()
+            if (part_headers.contains("content-disposition")) {
+                let cd = part_headers["content-disposition"]
+                let name_index = cd.find("name=\"")
+                if (name_index != -1) {
+                    let name_end = cd.find("\"", name_index + 6)
+                    if (name_end != -1) {
+                        name = cd.substring(name_index + 6, name_end)
+                    }
+                }
+            }
+
+            // 3. Read Content (Stream until \r\n--boundary)
+            let part_content = io.ArrayBuffer(65536u) 
+            let boundary_with_rn = "\r\n" + boundary
+            let match_pos = 0
+            
+            while (reader.is_eof() == false) {
+                let ch = reader.getch()
+                
+                // Check if character matches the sequence "\r\n--boundary"
+                if (ch == boundary_with_rn.data[match_pos]) {
+                    match_pos += 1
+                    if (match_pos == boundary_with_rn.length) {
+                        break
+                    }
+                } else {
+                    if (match_pos > 0) {
+                        for (let i = 0; i < match_pos; i += 1) {
+                            if (part_content.current_pos < part_content.size) {
+                                part_content.buf[part_content.current_pos] = boundary_with_rn.data[i]
+                                part_content.current_pos += 1
+                            }
+                        }
+                        match_pos = 0
+                        if (part_content.current_pos < part_content.size) {
+                            part_content.buf[part_content.current_pos] = ch
+                            part_content.current_pos += 1
+                        }
+                    } else {
+                        if (part_content.current_pos < part_content.size) {
+                            part_content.buf[part_content.current_pos] = ch
+                            part_content.current_pos += 1
+                        }
+                    }
+                }
+            }
+            
+            part_content.current_pos = 0
+            let part_reader = http.RequestReader(this.socket, part_content, part_headers)
+            receiver(name, part_reader)
+            
+            let next_ch = reader.getch()
+            
+            if (next_ch == '-') {
+                if (reader.getch() == '-') { break } 
+            } elif (next_ch == '\r') {
+                reader.getch() 
+            }
+        }
+    },
     json() : lang.Result<json.JSONValue, ResultCode> {
         if (this.headers.headers.contains("content-type") == false || this.headers.headers["content-type"].startswith("application/json") == false) {
             return lang.Result<json.JSONValue, ResultCode>.err(ResultCode.MISMATCH_CONTENT_TYPE)
@@ -206,8 +315,8 @@ impl Request {
         if (err != null) {
             return lang.Result<json.JSONValue, ResultCode>.err(ResultCode.BAD_RESPONSE)
         }
-        let [parsed, err] = json.parse(content)
-        if (err != null) {
+        let [parsed, err2] = json.parse(content)
+        if (err2 != null) {
             return lang.Result<json.JSONValue, ResultCode>.err(ResultCode.BAD_RESPONSE)
         }
         return lang.Result<json.JSONValue, ResultCode>.ok(parsed)
@@ -256,6 +365,7 @@ impl Request {
     },
     constructor(socket: socket.AbstractSocket) {
         this.socket = socket
+        this.cached_recv = io.ArrayBuffer(0)
     }
 }
 
