@@ -42,7 +42,7 @@ impl DefaultPackageSource : package.PackageSource {
         if (resp.unwrap().status_code() != 200) {
             return lang.Result<package.PackageInformation, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.NetworkError)
         }
-        let data = resp.unwrap().recv_text()
+        let data = resp.unwrap().text()
         if (data.is_err()) {
             return lang.Result<package.PackageInformation, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.NetworkError)
         }
@@ -75,7 +75,7 @@ impl DefaultPackageSource : package.PackageSource {
         if (resp.unwrap().status_code() != 200) {
             return lang.Result<package.PackageManifest, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.NetworkError)
         }
-        let data = resp.unwrap().recv_text()
+        let data = resp.unwrap().text()
         if (data.is_err()) {
             return lang.Result<package.PackageManifest, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.NetworkError)
         }

@@ -24,7 +24,7 @@ func main() : int {
 
     console.print("net-http-validation: received response header successfully\n")
     console.print(resp.unwrap().header, "\n")
-    let body = resp.unwrap().recv_text()
+    let body = resp.unwrap().text()
     if (body.is_err()) {
         console.print("net-http-validation: error receiving response body: ", body.unwrap_err() as int, "\n")
         return 1

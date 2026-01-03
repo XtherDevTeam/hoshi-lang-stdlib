@@ -77,7 +77,7 @@ struct Application {
     constructor(config: ApplicationConfig, backend: taskBackend.TaskBackend),
     constructor(config: ApplicationConfig, backend: taskBackend.TaskBackend, logger: logger.Logger),
     static handler(app: Application, client: socket.Socket) : response.Response,
-    static dispatch_error_endpoint(app: Application, code: int, message: str.Str) : response.Response
+    static dispatch_error_endpoint(app: Application, code: int, message: str.Str, endpoint: str.Str) : response.Response
 }
 
 impl Application {
@@ -169,7 +169,7 @@ impl Application {
         }
 
         if (req.is_err()) {
-            return wrap_after_request(Application.dispatch_error_endpoint(app, 400, "Bad Request"))
+            return wrap_after_request(Application.dispatch_error_endpoint(app, 400, "Bad Request", "unknown"))
         }
 
         for (let index = 0; index < app.config.before_requests.length; index += 1) {
@@ -181,7 +181,7 @@ impl Application {
         }
 
         if (app.config.route.contains(req.unwrap().target.target) == false) {
-            return wrap_after_request(Application.dispatch_error_endpoint(app, 404, "Not Found"))
+            return wrap_after_request(Application.dispatch_error_endpoint(app, 404, "Not Found", req.unwrap().target.target))
         }
 
         app.logger.info(str.format("Serving request for endpoint {}", req.unwrap().target.target))
@@ -191,7 +191,7 @@ impl Application {
 
         return wrap_after_request(resp)
     },
-    static dispatch_error_endpoint(app: Application, code: int, message: str.Str) : response.Response {
+    static dispatch_error_endpoint(app: Application, code: int, message: str.Str, endpoint: str.Str) : response.Response {
         if (app.config.error_endpoints.contains(code) == false) {
             let resp = response.Response(code, message, str.format("
                 <html>
@@ -202,12 +202,15 @@ impl Application {
                 <h1>{} {}</h1>
                 <p>An error occurred when processing your request</p>
                 <p>Server: hoshi-std-kiana</p>
+                <p>Endpoint: {}</p>
                 </body>
                 </html>
-                ", code, message, code, message))
+                ", code, message, code, message, endpoint))
             resp.headers.add_header("Content-Type", "text/html; charset=utf-8")
             return resp
         }
+
+        app.logger.error(str.format("Serving {} request for endpoint {}", code, endpoint))
         let handle = app.config.error_endpoints[code]
         return handle()
     }
