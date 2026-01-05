@@ -1,0 +1,37 @@
+use net "net"
+use str "str"
+use console "console"
+use kiana "kiana"
+use http "net/http"
+use hashMap "hashMap"
+use json "json"
+
+func param_handler(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
+    let id = params["id"]
+    let body = str.format("ID: {}", id)
+    return kiana.response.Response(http.HTTPResponseHeader("HTTP/1.1", 200, "OK"), body)
+}
+
+func wildcard_handler(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
+    return kiana.response.Response(http.HTTPResponseHeader("HTTP/1.1", 200, "OK"), str.Str("Wildcard matched"))
+}
+
+func multi_param_handler(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
+    let category = params["category"]
+    let item = params["item"]
+    let body = str.format("Category: {}, Item: {}", category, item)
+    return kiana.response.Response(http.HTTPResponseHeader("HTTP/1.1", 200, "OK"), body)
+}
+
+func main() : int {
+    console.print("server-router-test: start\n")
+    let app = kiana.application.Application(kiana.application.ApplicationConfig("127.0.0.1", 9006))
+    
+    app.use_route("/user/:id", func param_handler)
+    app.use_route("/static/*", func wildcard_handler)
+    app.use_route("/shop/:category/:item", func multi_param_handler)
+    
+    let rc = app.serve()
+    console.print("server-router-test: exit with code", rc as int, "\n")
+    return 0
+}

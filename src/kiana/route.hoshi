@@ -1,0 +1,176 @@
+use vec "vec"
+use str "str"
+use hashMap "hashMap"
+use request "request"
+use response "response"
+use lang "builtin"
+use console "console"
+
+enum RouteTreeNodeType {
+    FixedStringRoute,
+    ParameterRoute,
+    WildcardRoute
+}
+
+alias RouteHandler = func(request.Request, hashMap.HashMap<str.Str, str.Str>) : response.Response
+
+struct RouteMatch {
+    handler: RouteHandler,
+    params: hashMap.HashMap<str.Str, str.Str>,
+    constructor(handler: RouteHandler, params: hashMap.HashMap<str.Str, str.Str>)
+}
+
+impl RouteMatch {
+    constructor(handler: RouteHandler, params: hashMap.HashMap<str.Str, str.Str>) {
+        this.handler = handler
+        this.params = params
+    }
+}
+
+struct RouteTree {
+    childs: vec.Vec<RouteTree>,
+    node_type: RouteTreeNodeType,
+    matching_pattern: str.Str,
+    handler: RouteHandler,
+    is_end: bool,
+    full_path: str.Str,
+    
+    constructor(pattern: str.Str, node_type: RouteTreeNodeType),
+    constructor(),
+    
+    insert(path: str.Str, handler: RouteHandler) : none,
+    match(path: str.Str) : lang.Result<RouteMatch, int>,
+    match_recursive(parts: str.Str[], index: int, params: hashMap.HashMap<str.Str, str.Str>) : lang.Result<RouteMatch, int>
+}
+
+impl RouteTree {
+    constructor() {
+        this.childs = vec.Vec<RouteTree>()
+        this.node_type = RouteTreeNodeType.FixedStringRoute
+        this.matching_pattern = "/"
+        this.is_end = false
+        this.handler = null
+        this.full_path = ""
+    },
+    
+    constructor(pattern: str.Str, node_type: RouteTreeNodeType) {
+        this.childs = vec.Vec<RouteTree>()
+        this.node_type = node_type
+        this.matching_pattern = pattern
+        this.is_end = false
+        this.handler = null
+        this.full_path = ""
+    },
+
+    insert(path: str.Str, handler: RouteHandler) : none {
+        let parts = path.split("/")
+        let current_node = this
+        
+        for (let i = 0; i < parts.length; i += 1) {
+            let part = parts[i]
+            if (part.length == 0) {
+                continue
+            }
+            
+            let matched_child : RouteTree = null
+            
+            // Check for existing child match
+            for (let j = 0; j < current_node.childs.length; j += 1) {
+                let child = current_node.childs[j]
+                if (child.node_type == RouteTreeNodeType.FixedStringRoute && child.matching_pattern == part) {
+                    matched_child = child
+                    break
+                }
+                if (child.node_type == RouteTreeNodeType.ParameterRoute && part.startswith(":")) {
+                    matched_child = child
+                    break
+                }
+                 if (child.node_type == RouteTreeNodeType.WildcardRoute && part == "*") {
+                    matched_child = child
+                    break
+                }
+            }
+            
+            if (matched_child != null) {
+                current_node = matched_child
+            } else {
+                let new_node_type = RouteTreeNodeType.FixedStringRoute
+                let pattern = part
+                
+                if (part.startswith(":")) {
+                    new_node_type = RouteTreeNodeType.ParameterRoute
+                    pattern = part.substring(1, part.length) // Remove ':'
+                } elif (part == "*") {
+                    new_node_type = RouteTreeNodeType.WildcardRoute
+                }
+                
+                let new_node = RouteTree(pattern, new_node_type)
+                current_node.childs.push(new_node)
+                current_node = new_node
+            }
+        }
+        
+        current_node.is_end = true
+        current_node.handler = handler
+        current_node.full_path = path
+    },
+    
+    match(path: str.Str) : lang.Result<RouteMatch, int> {
+        let parts = path.split("/")
+        let params = hashMap.HashMap<str.Str, str.Str>()
+        return this.match_recursive(parts, 0, params)
+    },
+    
+    match_recursive(parts: str.Str[], index: int, params: hashMap.HashMap<str.Str, str.Str>) : lang.Result<RouteMatch, int> {
+         // Skip empty parts from split (leading/trailing slash)
+        while (index < parts.length && parts[index].length == 0) {
+            index += 1
+        }
+        
+        if (index >= parts.length) {
+            if (this.is_end) {
+                return lang.Result<RouteMatch, int>.ok(RouteMatch(this.handler, params))
+            } else {
+                return lang.Result<RouteMatch, int>.err(404)
+            }
+        }
+        
+        let part = parts[index]
+        
+        // 1. Static Match
+        for (let i = 0; i < this.childs.length; i += 1) {
+            let child = this.childs[i]
+            if (child.node_type == RouteTreeNodeType.FixedStringRoute && child.matching_pattern == part) {
+                let res = child.match_recursive(parts, index + 1, params)
+                if (res.is_ok()) {
+                    return res
+                }
+            }
+        }
+        
+        // 2. Param Match
+        for (let i = 0; i < this.childs.length; i += 1) {
+            let child = this.childs[i]
+            if (child.node_type == RouteTreeNodeType.ParameterRoute) {
+                params[child.matching_pattern] = part
+                let res = child.match_recursive(parts, index + 1, params)
+                if (res.is_ok()) {
+                    return res
+                }
+                params.remove(child.matching_pattern)
+            }
+        }
+        
+        // 3. Wildcard Match
+        for (let i = 0; i < this.childs.length; i += 1) {
+            let child = this.childs[i]
+            if (child.node_type == RouteTreeNodeType.WildcardRoute) {
+                if (child.is_end) {
+                     return lang.Result<RouteMatch, int>.ok(RouteMatch(child.handler, params))
+                }
+            }
+        }
+        
+        return lang.Result<RouteMatch, int>.err(404)
+    }
+}

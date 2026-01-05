@@ -10,6 +10,7 @@ use signal "signal"
 use logger "logger"
 use vec "vec"
 use lang "builtin"
+use route "route"
 
 enum ResultCode {
     SUCCESS,
@@ -25,12 +26,12 @@ alias AfterRequestHook = func(response.Response) : lang.Result<response.Response
 struct ApplicationConfig {
     host: str.Str,
     port: short,
-    route: hashMap.HashMap<str.Str, func(request.Request) : response.Response>,
+    route: route.RouteTree,
     before_requests: vec.Vec<BeforeRequestHook>,
     after_requests: vec.Vec<AfterRequestHook>,
     error_endpoints: hashMap.HashMap<int, func() : response.Response>,
     constructor(host: str.Str, port: short),
-    add_route(path: str.Str, handler: func(request.Request) : response.Response) : ApplicationConfig,
+    add_route(path: str.Str, handler: route.RouteHandler) : ApplicationConfig,
     add_error_endpoint(code: int, handler: func() : response.Response) : ApplicationConfig,
     add_before_request(hook: BeforeRequestHook) : ApplicationConfig,
     add_after_request(hook: AfterRequestHook) : ApplicationConfig
@@ -40,13 +41,13 @@ impl ApplicationConfig {
     constructor(host: str.Str, port: short) {
         this.host = host
         this.port = port
-        this.route = hashMap.HashMap<str.Str, func(request.Request) : response.Response>()
+        this.route = route.RouteTree()
         this.before_requests = vec.Vec<BeforeRequestHook>()
         this.after_requests = vec.Vec<AfterRequestHook>()
         this.error_endpoints = hashMap.HashMap<int, func() : response.Response>()
     },
-    add_route(path: str.Str, handler: func(request.Request) : response.Response) : ApplicationConfig {
-        this.route[path] = handler
+    add_route(path: str.Str, handler: route.RouteHandler) : ApplicationConfig {
+        this.route.insert(path, handler)
         return this
     },
     add_error_endpoint(code: int, handler: func() : response.Response) : ApplicationConfig {
@@ -69,7 +70,7 @@ struct Application {
     backend: taskBackend.TaskBackend,
     logger: logger.Logger,
     serve() : ResultCode,
-    use_route(path: str.Str, handler: func(request.Request) : response.Response) : none,
+    use_route(path: str.Str, handler: route.RouteHandler) : none,
     use_before_request(hook: BeforeRequestHook) : none,
     use_after_request(hook: AfterRequestHook) : none,
     use_error_endpoint(code: int, handler: func() : response.Response) : none,
@@ -105,7 +106,7 @@ impl Application {
     use_error_endpoint(code: int, handler: func() : response.Response) : none {
         this.config.add_error_endpoint(code, handler)
     },
-    use_route(path: str.Str, handler: func(request.Request) : response.Response) : none {
+    use_route(path: str.Str, handler: route.RouteHandler) : none {
         this.config.add_route(path, handler)
     },
     serve() : ResultCode {
@@ -180,14 +181,15 @@ impl Application {
             req.value = hook_result.unwrap()
         }
 
-        if (app.config.route.contains(req.unwrap().target.target) == false) {
+        let match_result = app.config.route.match(req.unwrap().target.target)
+        if (match_result.is_err()) {
             return wrap_after_request(Application.dispatch_error_endpoint(app, 404, "Not Found", req.unwrap().target.target))
         }
 
         app.logger.info(str.format("Serving request for endpoint {}", req.unwrap().target.target))
         
-        let handle = app.config.route[req.unwrap().target.target]
-        let resp = handle(req.unwrap())
+        let [handler, params] = match_result.unwrap()
+        let resp = handler(req.unwrap(), params)
 
         return wrap_after_request(resp)
     },

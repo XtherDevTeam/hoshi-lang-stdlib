@@ -11,7 +11,7 @@ use file "file"
 use jwt "jwt"
 use time "time"
 
-func root(req: kiana.request.Request) : kiana.response.Response {
+func root(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
     let body = str.Str("
         <!doctype html>
         <html>
@@ -46,12 +46,12 @@ func root(req: kiana.request.Request) : kiana.response.Response {
     return kiana.response.Response(headers, body)
 }
 
-func json_test(req: kiana.request.Request) : kiana.response.Response {
+func json_test(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
     let body = json.parse("{\"a\": \"Hello, world!\", \"b\": [1, 2, 3], \"c\": null}").unwrap()
     return kiana.response.Response(http.HTTPResponseHeader("HTTP/1.1", 200, "OK"), body)
 }
 
-func file_test(req: kiana.request.Request) : kiana.response.Response {
+func file_test(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
     let f = fs.open("/Users/chou/Downloads/The Graduation Trip.7z", "rb")
     if (f.is_err()) {
         return kiana.response.Response(http.HTTPResponseHeader("HTTP/1.1", 404, "Not Found"), str.Str("File not found"))
@@ -65,7 +65,7 @@ func file_test(req: kiana.request.Request) : kiana.response.Response {
     )
 }
 
-func jwt_cookie_set(req: kiana.request.Request) : kiana.response.Response {
+func jwt_cookie_set(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
     let session = jwt.JWTBuilder(jwt.HMACSHA256("kiana"))
         .add_claim("valkeryie", str.Str("Kiana Kaslana"))
         .add_claim("host_time", str.Stringable(time.Date.now() + time.Duration.timezone()).to_string())
@@ -92,7 +92,7 @@ func jwt_cookie_set(req: kiana.request.Request) : kiana.response.Response {
     return kiana.response.Response(headers, html)
 }
 
-func jwt_cookie_view(req: kiana.request.Request) : kiana.response.Response {
+func jwt_cookie_view(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
     if (req.headers.headers.contains("cookie") == false) {
         return kiana.response.Response(http.HTTPResponseHeader("HTTP/1.1", 404, "Not Found", hashMap.HashMap<str.Str, str.Str>()), str.Str("Cookie not found"))
     }
