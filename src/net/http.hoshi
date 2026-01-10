@@ -220,6 +220,7 @@ struct RequestReader {
     recv_next_raw() : lang.Result<io.ArrayBuffer, HTTPNetworkError>,
     read(size: int) : file.ReadBufferView,
     write(data: char[]) : int,
+    write(data: char[], start: int, size: int) : int,
     write(data: char[], size: int) : int,
     close() : none,
     seek(offset: int, whence: int) : int,
@@ -231,7 +232,8 @@ struct RequestReader {
     is_readable() : bool,
     is_writable() : bool,
     is_closed() : bool,
-    getch() : char
+    getch() : char,
+    putch(c: char) : none
 }
 
 impl RequestReader {
@@ -267,17 +269,84 @@ impl RequestReader {
     read(size: int) : file.ReadBufferView {
         let result_data = new char[size]()
         let actual_size = 0
+        
         while (actual_size < size && this.is_eof() == false) {
-            let ch = this.getch()
-            if (ch == '\0' && this.is_eof()) {
-                break
+            if (this.is_chunked) {
+                if (this.chunk_remaining == 0) {
+                    let ch = this.getch()
+                    if (this.is_eof_flag) {
+                        break
+                    }
+                    result_data[actual_size] = ch
+                    actual_size += 1
+                    continue
+                }
+                
+                if (this.cached_recv == null || this.cached_recv.current_pos >= this.cached_recv.size) {
+                    if (this.recv_next_raw().is_err()) {
+                        this.is_eof_flag = true
+                        break
+                    }
+                }
+                
+                let can_read = math.min(size - actual_size, this.cached_recv.size - this.cached_recv.current_pos)
+                can_read = math.min(can_read, this.chunk_remaining)
+                
+                if (can_read > 0) {
+                    runtime.memcpy(runtime.runtime_get_string_array_data_pointer(result_data) + actual_size, 
+                                   runtime.runtime_get_string_array_data_pointer(this.cached_recv.buf) + this.cached_recv.current_pos, 
+                                   can_read)
+                    
+                    actual_size += can_read
+                    this.cached_recv.current_pos += can_read
+                    this.chunk_remaining -= can_read
+                    this.read_pos += can_read
+                }
+                
+                if (this.chunk_remaining == 0) {
+                    for (let i = 0; i < 2; i += 1) {
+                        if (this.cached_recv == null || this.cached_recv.current_pos >= this.cached_recv.size) {
+                            if (this.recv_next_raw().is_err()) {
+                                break
+                            }
+                        }
+                        this.cached_recv.current_pos += 1
+                    }
+                }
+            } else {
+                if (this.cached_recv == null || this.cached_recv.current_pos >= this.cached_recv.size) {
+                    if (this.recv_next_raw().is_err()) {
+                        this.is_eof_flag = true
+                        break
+                    }
+                }
+                
+                let can_read = math.min(size - actual_size, this.cached_recv.size - this.cached_recv.current_pos)
+                if (this.content_length != -1) {
+                    can_read = math.min(can_read, this.content_length - this.read_pos)
+                }
+                
+                if (can_read > 0) {
+                    runtime.memcpy(runtime.runtime_get_string_array_data_pointer(result_data) + actual_size, 
+                                   runtime.runtime_get_string_array_data_pointer(this.cached_recv.buf) + this.cached_recv.current_pos, 
+                                   can_read)
+                    
+                    actual_size += can_read
+                    this.cached_recv.current_pos += can_read
+                    this.read_pos += can_read
+                } elif (this.content_length != -1 && this.read_pos >= this.content_length) {
+                    this.is_eof_flag = true
+                    break
+                } else {
+                    // unexpected end or stuck
+                    break
+                }
             }
-            result_data[actual_size] = ch
-            actual_size += 1
         }
         return file.ReadBufferView(actual_size, result_data)
     },
     write(data: char[]) : int { return 0 },
+    write(data: char[], start: int, size: int) : int { return 0 },
     write(data: char[], size: int) : int { return 0 },
     close() : none { return },
     seek(offset: int, whence: int) : int { return 0 },
@@ -383,6 +452,9 @@ impl RequestReader {
             this.read_pos += 1
             return ch
         }
+    },
+    putch(c: char) : none {
+        return
     }
 }
 
@@ -392,6 +464,9 @@ impl RequestReader : file.AbstractFile {
     },
     write(data: char[]) : int {
         return this.write(data)
+    },
+    write(data: char[], begin: int, size: int) : int {
+        return this.write(data, begin, size)
     },
     write(data: char[], size: int) : int {
         return this.write(data, size)
@@ -428,6 +503,9 @@ impl RequestReader : file.AbstractFile {
     },
     getch() : char {
         return this.getch()
+    },
+    putch(c: char) : none {
+        this.putch(c)
     }
 }
 

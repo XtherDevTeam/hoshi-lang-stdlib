@@ -7,7 +7,9 @@ use lang "builtin"
 use json "json"
 use math "math"
 use runtime "runtime"
-use console "console"
+use random "random"
+use fs "fs"
+use file "file"
 
 enum ResultCode {
     INVALID_HTTP_HEADER,
@@ -51,6 +53,206 @@ impl ResourceTarget {
     }
 }
 
+struct FormDataReader {
+    headers: hashMap.HashMap<str.Str, str.Str>,
+    path: fs.Path,
+    temp_file: fs.OSFile,
+    constructor(headers: hashMap.HashMap<str.Str, str.Str>, path: fs.Path, temp_file: fs.OSFile),
+    read(size: int) : file.ReadBufferView,
+    write(data: char[]) : int,
+    write(data: char[], start: int, size: int) : int,
+    write(data: char[], size: int) : int,
+    close() : none,
+    seek(offset: int, whence: int) : int,
+    tell() : int,
+    flush() : none,
+    is_eof() : bool,
+    size() : int,
+    is_seekable() : bool,
+    is_readable() : bool,
+    is_writable() : bool,
+    is_closed() : bool,
+    getch() : char,
+    putch(c: char) : none,
+    static create_temp_file(headers: hashMap.HashMap<str.Str, str.Str>) : FormDataReader,
+    finalizer(),
+    save_as(path: str.Str) : none,
+}
+
+impl FormDataReader {
+    static create_temp_file(headers: hashMap.HashMap<str.Str, str.Str>) : FormDataReader {
+        let formDataName = "kiana-form" + str.Stringable(runtime.runtime_random_legacy_unsigned()).to_string()
+        let path = fs.Path.temp_dir() / formDataName
+        formDataName = str.Stringable(path).to_string()
+        let [f, err] = fs.open(formDataName, "wb+")
+        if (err != null) {
+            return null
+        }
+        return FormDataReader(headers, path, f)
+    },
+    constructor(headers: hashMap.HashMap<str.Str, str.Str>, path: fs.Path, temp_file: fs.OSFile) {
+        this.headers = headers
+        this.path = path
+        this.temp_file = temp_file
+    },
+    read(size: int) : file.ReadBufferView {
+        return this.temp_file.read(size)
+    },
+    write(data: char[]) : int {
+        return this.temp_file.write(data)
+    },
+    write(data: char[], start: int, size: int) : int {
+        return this.temp_file.write(data, start, size)
+    },
+    write(data: char[], size: int) : int {
+        return this.temp_file.write(data, size)
+    },
+    close() : none {
+        this.temp_file.close()
+    },
+    seek(offset: int, whence: int) : int {
+        return this.temp_file.seek(offset, whence)
+    },
+    tell() : int {
+        return this.temp_file.tell()
+    },
+    flush() : none {
+        this.temp_file.flush()
+    },
+    is_eof() : bool {
+        return this.temp_file.is_eof()
+    },
+    size() : int {
+        return this.temp_file.size()
+    },
+    is_seekable() : bool {
+        return this.temp_file.is_seekable()
+    },
+    is_readable() : bool {
+        return this.temp_file.is_readable()
+    },
+    is_writable() : bool {
+        return this.temp_file.is_writable()
+    },
+    is_closed() : bool {
+        return this.temp_file.is_closed()
+    },
+    getch() : char {
+        return this.temp_file.getch()
+    },
+    putch(c: char) : none {
+        this.temp_file.putch(c)
+    },
+    finalizer() {
+        this.close()
+        this.path.remove()
+    },
+    save_as(path: str.Str) : none {
+        this.path.move(path)
+    }
+}
+
+impl FormDataReader : file.AbstractFile {
+    read(size: int) : file.ReadBufferView {
+        return this.read(size)
+    },
+    write(data: char[]) : int {
+        return this.write(data)
+    },
+    write(data: char[], start: int, size: int) : int {
+        return this.write(data, start, size)
+    },
+    write(data: char[], size: int) : int {
+        return this.write(data, size)
+    },
+    close() : none {
+        this.close()
+    },
+    seek(offset: int, whence: int) : int {
+        return this.seek(offset, whence)
+    },
+    tell() : int {
+        return this.tell()
+    },
+    flush() : none {
+        this.flush()
+    },
+    is_eof() : bool {
+        return this.is_eof()
+    },
+    size() : int {
+        return this.size()
+    },
+    is_seekable() : bool {
+        return this.is_seekable()
+    },
+    is_readable() : bool {
+        return this.is_readable()
+    },
+    is_writable() : bool {
+        return this.is_writable()
+    },
+    is_closed() : bool {
+        return this.is_closed()
+    },
+    getch() : char {
+        return this.getch()
+    },
+    putch(c: char) : none {
+        this.putch(c)
+    }
+}
+
+func compute_kmp_lps(pattern: str.Str) : int[] {
+    let m = pattern.length
+    let lps = new int[m]() // Create integer array of size m
+    let len = 0
+    let i = 1
+    lps[0] = 0
+        
+    while (i < m) {
+        if (pattern.data[i] == pattern.data[len]) {
+            len += 1
+            lps[i] = len
+            i += 1
+        } else {
+            if (len != 0) {
+                len = lps[len - 1]
+            } else {
+                lps[i] = 0
+                i += 1
+            }
+        }
+    }
+    return lps
+}
+
+func search_kmp(buffer: io.ArrayBuffer, start_offset: int, data_len: int, pattern: str.Str, lps: int[]) : int {
+    let m = pattern.length
+    let n = data_len
+    let i = start_offset // index for buffer
+    let j = 0 // index for pattern
+        
+    while (i < n) {
+        if (pattern.data[j] == buffer.buf[i]) {
+            j += 1
+            i += 1
+        }
+        if (j == m) {
+            return i - j // Match found at this index
+            // j = lps[j - 1] // If we wanted to find next occurrences
+        } elif (i < n && pattern.data[j] != buffer.buf[i]) {
+            if (j != 0) {
+                j = lps[j - 1]
+            } else {
+                i += 1
+            }
+        }
+    }
+    return -1
+}
+
+
 struct Request {
     headers: http.HTTPRequestHeader,
     target: ResourceTarget,
@@ -64,7 +266,7 @@ struct Request {
     iterate_chunk() : io.ArrayBuffer,
     json() : lang.Result<json.JSONValue, ResultCode>,
     text() : lang.Result<str.Str, ResultCode>,
-    form_data(receiver : func(str.Str, http.RequestReader) : none) : none,
+    form_data(receiver : func(str.Str, FormDataReader) : none) : none,
     reader() : http.RequestReader
 }
 
@@ -204,49 +406,94 @@ impl Request {
             return lang.Result<str.Str, http.HTTPNetworkError>.ok(content)
         }
     },
-    form_data(receiver : func(str.Str, http.RequestReader) : none) : none {
+    form_data(receiver : func(str.Str, FormDataReader) : none) : none {
         if (this.headers.headers.contains("content-type") == false || this.headers.headers["content-type"].startswith("multipart/form-data") == false) {
             return
         }
+        
+        // 1. Setup Constants
+        let CHUNK_SIZE = 1048576 // 1MB
         let content_type = this.headers.headers["content-type"]
         let boundary_index = content_type.find("boundary=")
-        // +9 is correct for "boundary=" length
-        let boundary = "--" + content_type.substring(boundary_index + 9, content_type.length)
-        let reader = this.reader()
+        let raw_boundary = content_type.substring(boundary_index + 9, content_type.length)
         
-        // 1. Skip preamble till first boundary
-        let line = str.Str()
-        while (reader.is_eof() == false) {
-            let ch = reader.getch()
-            if (ch == '\n') {
-                if (line.trim() == boundary) {
-                    break
-                }
-                line = str.Str()
-            } elif (ch != '\r') {
-                line.push(ch)
+        // The delimiter inside the body is "\r\n--" + boundary
+        // Note: The very first line is just "--" + boundary, handled separately
+        let delimiter_str = "\r\n--" + raw_boundary
+        let delimiter_lps = compute_kmp_lps(delimiter_str)
+        let delimiter_len = delimiter_str.length
+        
+        let reader = this.reader()
+        let buffer = io.ArrayBuffer(CHUNK_SIZE) 
+        let buffer_valid_len = 0
+        let buffer_pos = 0 // cursor position in current buffer
+
+        // Helper to refill buffer if empty or move cursor
+        // Returns false if EOF
+        let ensure_data = func[buffer_pos, buffer_valid_len](reader: http.RequestReader, buffer: io.ArrayBuffer, CHUNK_SIZE: int) : bool {
+            if (this.buffer_pos >= this.buffer_valid_len) {
+                this.buffer_pos := 0
+                let view = reader.read(CHUNK_SIZE)
+                if (view.size == 0) { return false }
+                
+                // Copy read data into our managed buffer
+                runtime.memcpy(runtime.runtime_get_string_array_data_pointer(buffer.buf), runtime.runtime_get_string_array_data_pointer(view.data), view.size)
+                this.buffer_valid_len := view.size
+                return true
             }
+            return true
         }
 
-        // 2. Process Parts
-        while (reader.is_eof() == false) {
-            // Parse headers of the part
+        // Helper to read a line from our managed buffer
+        let read_line_buffered = func[buffer_pos, buffer_valid_len, ensure_data](reader: http.RequestReader, buffer: io.ArrayBuffer, CHUNK_SIZE: int) : str.Str {
+            let line = str.Str()
+            while (true) {
+                if (this.buffer_pos >= this.buffer_valid_len) {
+                    if (this.ensure_data(reader, buffer, CHUNK_SIZE) == false) { break }
+                }
+                
+                let ch = buffer.buf[this.buffer_pos]
+                this.buffer_pos := this.buffer_pos + 1
+                
+                if (ch == '\n') {
+                    break
+                } elif (ch != '\r') {
+                    line.push(ch)
+                }
+            }
+            return line
+        }
+
+        // --- STEP 1: Skip Preamble ---
+        // We look for "--" + boundary strictly.
+        let first_boundary = "--" + raw_boundary
+        while (true) {
+            let line = read_line_buffered(reader, buffer, CHUNK_SIZE)
+            if (line.trim() == first_boundary) {
+                break
+            }
+            // If we hit EOF without finding boundary, just return
+            if (buffer_pos >= buffer_valid_len && reader.is_eof()) { return }
+        }
+
+        // --- STEP 2: Process Parts Loop ---
+        while (true) {
+            // A. Parse Headers
             let part_headers = hashMap.HashMap<str.Str, str.Str>()
             while (true) {
-                line = str.Str()
-                while (reader.is_eof() == false) {
-                    let ch = reader.getch()
-                    if (ch == '\n') { break }
-                    if (ch != '\r') { line.push(ch) }
-                }
-                if (line.length == 0) { break } // End of headers
+                let line = read_line_buffered(reader, buffer, CHUNK_SIZE)
+                if (line.length == 0) { break } // Empty line = End of headers
+                
                 let colon = line.find(":")
                 if (colon != -1) {
                     part_headers[line.substring(0, colon).lowercase().trim()] = line.substring(colon + 1, line.length).trim()
                 }
             }
+            
+            // Check if we reached end stream (often happens if prev part ended with --boundary--)
+            if (part_headers.size() == 0 && reader.is_eof()) { break }
 
-            let name = str.Str()
+            let name : str.Str = "unknown"
             if (part_headers.contains("content-disposition")) {
                 let cd = part_headers["content-disposition"]
                 let name_index = cd.find("name=\"")
@@ -258,52 +505,120 @@ impl Request {
                 }
             }
 
-            // 3. Read Content (Stream until \r\n--boundary)
-            let part_content = io.ArrayBuffer(65536u) 
-            let boundary_with_rn = "\r\n" + boundary
-            let match_pos = 0
+            // B. Stream Body Content with KMP
+            let part_content = FormDataReader.create_temp_file(part_headers)
             
-            while (reader.is_eof() == false) {
-                let ch = reader.getch()
+            while (true) {
+                // 1. Ensure we have data
+                if (buffer_pos >= buffer_valid_len) {
+                    if (ensure_data(reader, buffer, CHUNK_SIZE) == false) { break }
+                }
+
+                // 2. Calculate Search Range
+                // We search from buffer_pos to buffer_valid_len
+                let available_len = buffer_valid_len - buffer_pos
                 
-                // Check if character matches the sequence "\r\n--boundary"
-                if (ch == boundary_with_rn.data[match_pos]) {
-                    match_pos += 1
-                    if (match_pos == boundary_with_rn.length) {
+                // 3. Run KMP Search
+                let match_idx = search_kmp(buffer, buffer_pos, buffer_valid_len, delimiter_str, delimiter_lps)
+                
+                if (match_idx != -1) {
+                    // --- MATCH FOUND ---
+                    // Write data up to the match
+                    let size_to_write = match_idx - buffer_pos
+                    if (size_to_write > 0) {
+                        part_content.write(buffer.buf, buffer_pos, size_to_write)
+                    }
+                    
+                    // Move cursor past the delimiter to start of next headers/end
+                    buffer_pos := match_idx + delimiter_len
+                    break // Exit content loop, go to next part
+                } else {
+                    // --- NO MATCH FOUND ---
+                    // We cannot write the whole buffer because the boundary might be split 
+                    // between the end of this chunk and the start of the next.
+                    // We must reserve (delimiter_len - 1) bytes.
+                    
+                    let reserve = delimiter_len - 1
+                    let writeable_len = available_len - reserve
+                    
+                    if (writeable_len > 0) {
+                        // Write safe part
+                        part_content.write(buffer.buf, buffer_pos, writeable_len)
+                        buffer_pos += writeable_len
+                    }
+                    
+                    // Now we must move the 'reserve' bytes to the start of the buffer
+                    // and refill the rest of the buffer to continue searching.
+                    
+                    let tail_len = buffer_valid_len - buffer_pos
+                    // Move tail to index 0
+                    if (tail_len > 0) {
+                        runtime.memcpy(
+                            runtime.runtime_get_string_array_data_pointer(buffer.buf), 
+                            runtime.runtime_get_string_array_data_pointer(buffer.buf) + buffer_pos, 
+                            tail_len
+                        )
+                    }
+                    
+                    // Read new chunk to fill the rest
+                    let read_req_size = CHUNK_SIZE - tail_len
+                    let view = reader.read(read_req_size)
+                    
+                    if (view.size == 0) {
+                        // EOF unexpected inside a part? write remaining and break
+                        part_content.write(buffer.buf, tail_len)
                         break
                     }
-                } else {
-                    if (match_pos > 0) {
-                        for (let i = 0; i < match_pos; i += 1) {
-                            if (part_content.current_pos < part_content.size) {
-                                part_content.buf[part_content.current_pos] = boundary_with_rn.data[i]
-                                part_content.current_pos += 1
-                            }
-                        }
-                        match_pos = 0
-                        if (part_content.current_pos < part_content.size) {
-                            part_content.buf[part_content.current_pos] = ch
-                            part_content.current_pos += 1
-                        }
-                    } else {
-                        if (part_content.current_pos < part_content.size) {
-                            part_content.buf[part_content.current_pos] = ch
-                            part_content.current_pos += 1
-                        }
-                    }
+                    
+                    // Append new data after tail
+                    runtime.memcpy(
+                        runtime.runtime_get_string_array_data_pointer(buffer.buf) + tail_len,
+                        runtime.runtime_get_string_array_data_pointer(view.data),
+                        view.size
+                    )
+                    
+                    buffer_pos := 0
+                    buffer_valid_len = tail_len + view.size
                 }
             }
             
-            part_content.current_pos = 0
-            let part_reader = http.RequestReader(this.socket, part_content, part_headers)
-            receiver(name, part_reader)
+            // C. Finalize Part
+            part_content.seek(0, 0) // Reset file pointer for user
+            receiver(name, part_content)
             
-            let next_ch = reader.getch()
+            // D. Check for End of Stream (--boundary--)
+            // At this point, buffer_pos is right after \r\n--boundary
+            // We need to check next 2 chars.
             
-            if (next_ch == '-') {
-                if (reader.getch() == '-') { break } 
-            } elif (next_ch == '\r') {
-                reader.getch() 
+            // Ensure we have at least 2 bytes in buffer
+            if (buffer_valid_len - buffer_pos < 2) {
+                // Shift remaining to 0 and read more
+                let tail = buffer_valid_len - buffer_pos
+                if (tail > 0) {
+                    runtime.memcpy(runtime.runtime_get_string_array_data_pointer(buffer.buf), runtime.runtime_get_string_array_data_pointer(buffer.buf) + buffer_pos, tail)
+                }
+                buffer_pos = 0
+                let v = reader.read(CHUNK_SIZE - tail)
+                if (v.size > 0) {
+                    runtime.memcpy(runtime.runtime_get_string_array_data_pointer(buffer.buf) + tail, runtime.runtime_get_string_array_data_pointer(v.data), v.size)
+                    buffer_valid_len = tail + v.size
+                } else {
+                    buffer_valid_len = tail
+                }
+            }
+            
+            if (buffer_valid_len - buffer_pos >= 2) {
+                let c1 = buffer.buf[buffer_pos]
+                let c2 = buffer.buf[buffer_pos+1]
+                
+                if (c1 == '-' && c2 == '-') {
+                    break // End of all parts
+                } 
+                if (c1 == '\r' && c2 == '\n') {
+                    buffer_pos := buffer_pos + 2 // Skip \r\n, loop back to parse headers
+                }
+            } else {
+                break
             }
         }
     },

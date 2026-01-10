@@ -21,16 +21,26 @@ create table packages (
     description     string not null,
     repository      string not null,
     license         string not null,
-    versions        string default '[]'
+    readme          string not null default ''
 );
 
 create table artifacts (
     id              integer primary key,
     package_id      integer not null,
+    uuid            string not null,
     version         string not null,
-    filename         string not null,
+    filename        string not null,
     mime            string not null,
     destinations    string not null
+);
+
+create table package_versions (
+    id              integer primary key,
+    package_id      integer not null,
+    tag_name        string not null,
+    revision_notes  string not null,
+    artifacts       string not null default '[]',
+    created_at      timestamp default current_timestamp
 );
 
 insert into config (host, port, artifacts_dir) values ('localhost', 8080, 'blob/artifacts');

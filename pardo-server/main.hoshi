@@ -13,6 +13,7 @@ use time "time"
 use dataProvider "share/dataProvider"
 use context "share/context"
 use types "share/types"
+use vec "vec"
 use lang "builtin"
 
 let pcontext : context.PardoServerContext = null
@@ -24,6 +25,8 @@ let public_routes = hashMap.HashMap<str.Str, str.Str>()
     .put("/v1/user/login", "full-match")
     .put("/v1/package/list", "full-match")
     .put("/v1/package/info", "full-match")
+    .put("/v1/package/version/list", "full-match")
+    .put("/v1/package/version/info", "full-match")
 
 func check_admin_status() : none {
     let [_, err] = data_provider.get_user_by_username("jerry_chou")
@@ -79,7 +82,7 @@ func get_current_user_id(req: kiana.request.Request) : lang.Result<int, str.Str>
 }
 
 // /
-func route_root(req: kiana.request.Request) : kiana.response.Response {
+func route_root(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
     return kiana.response.Response(
         http.HTTPResponseHeader("HTTP/1.1", 200, "OK"),
         json.JSONDict()
@@ -127,7 +130,7 @@ func post_authentication(req: kiana.request.Request) : lang.Result<kiana.request
 }
 
 // /v1/admin/config/get
-func route_admin_get_config(req: kiana.request.Request) : kiana.response.Response {
+func route_admin_get_config(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
     let [config, err] = data_provider.get_config()
     if (err != null) {
         return make_error_response("failed to fetch config")
@@ -146,7 +149,7 @@ func route_admin_get_config(req: kiana.request.Request) : kiana.response.Respons
 }
 
 // /v1/admin/config/set
-func route_admin_set_config(req: kiana.request.Request) : kiana.response.Response {
+func route_admin_set_config(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
     let [body_json, err] = req.json()
     if (err != null) {
         return make_error_response("invalid request: error parsing json")
@@ -169,7 +172,7 @@ func route_admin_set_config(req: kiana.request.Request) : kiana.response.Respons
 }
 
 // /v1/admin/user/add
-func route_admin_add_user(req: kiana.request.Request) : kiana.response.Response {
+func route_admin_add_user(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
     let [body_json, err] = req.json()
 
     if (err != null) {
@@ -196,7 +199,7 @@ func route_admin_add_user(req: kiana.request.Request) : kiana.response.Response 
 }
 
 // /v1/user/login
-func route_login(req: kiana.request.Request) : kiana.response.Response {
+func route_login(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
     let [body_json, err] = req.json()
     if (err != null) {
         return make_error_response("invalid request: error parsing json")
@@ -231,7 +234,7 @@ func route_login(req: kiana.request.Request) : kiana.response.Response {
 }
 
 // /v1/user/logout
-func route_logout(req: kiana.request.Request) : kiana.response.Response {
+func route_logout(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
     let cookie = kiana.cookie.Cookie()
         .put("pardo_session", "")
         .path("/")
@@ -246,7 +249,7 @@ func route_logout(req: kiana.request.Request) : kiana.response.Response {
 }
 
 // /v1/user/info
-func route_user_info(req: kiana.request.Request) : kiana.response.Response {
+func route_user_info(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
     let [user_id, id_err] = get_current_user_id(req)
     if (id_err != null) {
         return make_error_response("not authenticated")
@@ -270,7 +273,7 @@ func route_user_info(req: kiana.request.Request) : kiana.response.Response {
 }
 
 // /v1/package/list
-func route_package_list(req: kiana.request.Request) : kiana.response.Response {
+func route_package_list(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
     let [packages, err] = data_provider.get_package_list()
     if (err != null) {
         return make_error_response("failed to fetch packages")
@@ -285,6 +288,7 @@ func route_package_list(req: kiana.request.Request) : kiana.response.Response {
             .put("author", pkg.author)
             .put("description", pkg.description)
             .put("license", pkg.license)
+            .put("readme", pkg.readme)
             .put("repository", pkg.repository) as json.JSONValue
         )
     }
@@ -298,7 +302,7 @@ func route_package_list(req: kiana.request.Request) : kiana.response.Response {
 }
 
 // /v1/package/info
-func route_package_info(req: kiana.request.Request) : kiana.response.Response {
+func route_package_info(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
     let [body_json, err] = req.json()
     if (err != null) {
         return make_error_response("invalid request: error parsing json")
@@ -324,13 +328,14 @@ func route_package_info(req: kiana.request.Request) : kiana.response.Response {
                 .put("author", pkg.author)
                 .put("description", pkg.description)
                 .put("license", pkg.license)
+                .put("readme", pkg.readme)
                 .put("repository", pkg.repository)
             ) as json.JSONValue
     )
 }
 
 // /v1/package/add
-func route_package_add(req: kiana.request.Request) : kiana.response.Response {
+func route_package_add(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
     let [user_id, id_err] = get_current_user_id(req)
     if (id_err != null) {
         return make_error_response("not authenticated")
@@ -347,7 +352,7 @@ func route_package_add(req: kiana.request.Request) : kiana.response.Response {
     }
     let body = dyn_cast<json.JSONDict>(body_json)
     
-    if (body.contains("name") == false || body.contains("description") == false || body.contains("repository") == false || body.contains("license") == false) {
+    if (body.contains("name") == false || body.contains("description") == false || body.contains("repository") == false || body.contains("license") == false || body.contains("readme") == false) {
         return make_error_response("invalid request: missing required fields")
     }
 
@@ -355,8 +360,9 @@ func route_package_add(req: kiana.request.Request) : kiana.response.Response {
     let description = dyn_cast<str.Str>(body["description"])
     let repository = dyn_cast<str.Str>(body["repository"])
     let license = dyn_cast<str.Str>(body["license"])
+    let readme = dyn_cast<str.Str>(body["readme"])
 
-    if (data_provider.register_package(name, user.username, description, repository, license) != dataProvider.ResultCode.Success) {
+    if (data_provider.register_package(name, user.username, description, repository, license, readme) != dataProvider.ResultCode.Success) {
         return make_error_response("failed to register package")
     }
 
@@ -368,7 +374,7 @@ func route_package_add(req: kiana.request.Request) : kiana.response.Response {
 }
 
 // /v1/package/update
-func route_package_update(req: kiana.request.Request) : kiana.response.Response {
+func route_package_update(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
     let [user_id, id_err] = get_current_user_id(req)
     if (id_err != null) {
         return make_error_response("not authenticated")
@@ -404,6 +410,7 @@ func route_package_update(req: kiana.request.Request) : kiana.response.Response 
     let description = pkg.description
     let repository = pkg.repository
     let license = pkg.license
+    let readme = pkg.readme
 
     if (body.contains("name")) {
         name = dyn_cast<str.Str>(body["name"])
@@ -417,9 +424,12 @@ func route_package_update(req: kiana.request.Request) : kiana.response.Response 
     if (body.contains("license")) {
         license = dyn_cast<str.Str>(body["license"])
     }
+    if (body.contains("readme")) {
+        readme = dyn_cast<str.Str>(body["readme"])
+    }
 
     // Author remains the same unless explicit admin logic, here we keep original author
-    let [success, update_err] = data_provider.update_package(pkg.id, name, pkg.author, description, repository, license)
+    let [success, update_err] = data_provider.update_package(pkg.id, name, pkg.author, description, repository, license, readme)
     if (update_err != null) {
         return make_error_response("failed to update package")
     }
@@ -432,7 +442,7 @@ func route_package_update(req: kiana.request.Request) : kiana.response.Response 
 }
 
 // /v1/package/remove
-func route_package_remove(req: kiana.request.Request) : kiana.response.Response {
+func route_package_remove(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
     let [user_id, id_err] = get_current_user_id(req)
     if (id_err != null) {
         return make_error_response("not authenticated")
@@ -469,6 +479,141 @@ func route_package_remove(req: kiana.request.Request) : kiana.response.Response 
         return make_error_response("failed to delete package")
     }
 
+    return kiana.response.Response(
+        http.HTTPResponseHeader("HTTP/1.1", 200, "OK"),
+        json.JSONDict()
+            .put("status", str.Str("ok")) as json.JSONValue
+    )
+}
+
+// /v1/package/version/list
+func route_package_version_list(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
+    let [body_json, err] = req.json()
+    if (err != null) {
+        return make_error_response("invalid request: error parsing json")
+    }
+    let body = dyn_cast<json.JSONDict>(body_json)
+    if (body.contains("package_id") == false) {
+        return make_error_response("invalid request: missing package_id")
+    }
+    let pkg_id = dyn_cast<json.Numeric>(body["package_id"])
+    let [versions, v_err] = data_provider.get_package_versions(pkg_id.getInt())
+    if (v_err != null) {
+        return make_error_response("failed to fetch versions")
+    }
+    let list = json.JSONList()
+    for (let i = 0; i < versions.length; i += 1) {
+        list.push(versions[i].to_json())
+    }
+    return kiana.response.Response(
+        http.HTTPResponseHeader("HTTP/1.1", 200, "OK"),
+        json.JSONDict()
+            .put("status", str.Str("ok"))
+            .put("data", list) as json.JSONValue
+    )
+}
+
+// /v1/package/version/info
+func route_package_version_info(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
+    let [body_json, err] = req.json()
+    if (err != null) {
+        return make_error_response("invalid request: error parsing json")
+    }
+    let body = dyn_cast<json.JSONDict>(body_json)
+    if (body.contains("package_id") == false || body.contains("tag_name") == false) {
+        return make_error_response("invalid request: missing package_id or tag_name")
+    }
+    let pkg_id = dyn_cast<json.Numeric>(body["package_id"])
+    let tag_name = dyn_cast<str.Str>(body["tag_name"])
+    let [version, v_err] = data_provider.get_package_version(pkg_id.getInt(), tag_name)
+    if (v_err != null) {
+        return make_error_response("version not found")
+    }
+    return kiana.response.Response(
+        http.HTTPResponseHeader("HTTP/1.1", 200, "OK"),
+        json.JSONDict()
+            .put("status", str.Str("ok"))
+            .put("data", version.to_json()) as json.JSONValue
+    )
+}
+
+// /v1/package/version/add
+func route_package_version_add(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
+    let [user_id, id_err] = get_current_user_id(req)
+    if (id_err != null) {
+        return make_error_response("not authenticated")
+    }
+    let [user, u_err] = data_provider.get_user_by_id(user_id)
+    if (u_err != null) {
+        return make_error_response("user not found")
+    }
+    let [body_json, err] = req.json()
+    if (err != null) {
+        return make_error_response("invalid request: error parsing json")
+    }
+    let body = dyn_cast<json.JSONDict>(body_json)
+    if (body.contains("package_id") == false || body.contains("tag_name") == false || body.contains("revision_notes") == false || body.contains("artifacts") == false) {
+        return make_error_response("invalid request: missing required fields")
+    }
+    let pkg_id = dyn_cast<json.Numeric>(body["package_id"])
+    let tag_name = dyn_cast<str.Str>(body["tag_name"])
+    let revision_notes = dyn_cast<str.Str>(body["revision_notes"])
+    let artifacts_json = dyn_cast<json.JSONList>(body["artifacts"])
+    let artifacts = json.JSONValue(artifacts_json).to_string()
+
+    let [pkg, pkg_err] = data_provider.get_package_by_id(pkg_id.getInt())
+    if (pkg_err != null) {
+        return make_error_response("package not found")
+    }
+    if (pkg.author != user.username && user.permission != types.Permission.Administrator) {
+        return make_error_response("permission denied")
+    }
+
+    if (data_provider.add_package_version(pkg_id.getInt(), tag_name, revision_notes, artifacts) != dataProvider.ResultCode.Success) {
+        return make_error_response("failed to add version")
+    }
+    return kiana.response.Response(
+        http.HTTPResponseHeader("HTTP/1.1", 200, "OK"),
+        json.JSONDict()
+            .put("status", str.Str("ok")) as json.JSONValue
+    )
+}
+
+// /v1/package/version/update
+func route_package_version_update(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
+    let [user_id, id_err] = get_current_user_id(req)
+    if (id_err != null) {
+        return make_error_response("not authenticated")
+    }
+    let [user, u_err] = data_provider.get_user_by_id(user_id)
+    if (u_err != null) {
+        return make_error_response("user not found")
+    }
+    let [body_json, err] = req.json()
+    if (err != null) {
+        return make_error_response("invalid request: error parsing json")
+    }
+    let body = dyn_cast<json.JSONDict>(body_json)
+    if (body.contains("package_id") == false || body.contains("tag_name") == false || body.contains("revision_notes") == false || body.contains("artifacts") == false) {
+        return make_error_response("invalid request: missing required fields")
+    }
+    let pkg_id = dyn_cast<json.Numeric>(body["package_id"])
+    let tag_name = dyn_cast<str.Str>(body["tag_name"])
+    let revision_notes = dyn_cast<str.Str>(body["revision_notes"])
+    let artifacts_json = dyn_cast<json.JSONList>(body["artifacts"])
+    let artifacts = json.JSONValue(artifacts_json).to_string()
+
+    let [pkg, pkg_err] = data_provider.get_package_by_id(pkg_id.getInt())
+    if (pkg_err != null) {
+        return make_error_response("package not found")
+    }
+    if (pkg.author != user.username && user.permission != types.Permission.Administrator) {
+        return make_error_response("permission denied")
+    }
+
+    if (data_provider.update_package_version(pkg_id.getInt(), tag_name, revision_notes, artifacts) != dataProvider.ResultCode.Success) {
+        return make_error_response("failed to update version")
+    }
     return kiana.response.Response(
         http.HTTPResponseHeader("HTTP/1.1", 200, "OK"),
         json.JSONDict()
@@ -515,6 +660,10 @@ func main() : int {
     application.use_route("/v1/package/add", func route_package_add)
     application.use_route("/v1/package/update", func route_package_update)
     application.use_route("/v1/package/remove", func route_package_remove)
+    application.use_route("/v1/package/version/list", func route_package_version_list)
+    application.use_route("/v1/package/version/info", func route_package_version_info)
+    application.use_route("/v1/package/version/add", func route_package_version_add)
+    application.use_route("/v1/package/version/update", func route_package_version_update)
     application.serve()
 
     return 0

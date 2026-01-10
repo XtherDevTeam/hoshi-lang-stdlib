@@ -125,6 +125,57 @@ func error_route() : kiana.response.Response {
     return kiana.response.Response(http.HTTPResponseHeader("HTTP/1.1", 404, "NOT FOUND").add_header("Content-Type", "text/plain; charset=UTF-8"), str.Str("页面被 Kiana 吃掉了喵～"))
 }
 
+func upload_test(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
+    req.form_data(func[](name: str.Str, reader: kiana.request.FormDataReader) : none {
+        if (reader.headers.contains("content-disposition")) {
+            let cd = reader.headers["content-disposition"]
+            let filename_index = cd.find("filename=\"")
+            if (filename_index != -1) {
+                let filename_end = cd.find("\"", filename_index + 10)
+                if (filename_end != -1) {
+                    let filename = cd.substring(filename_index + 10, filename_end)
+                    console.print("Uploading file: ", filename, "\n")
+                    reader.save_as(filename)
+                    console.print("Saved file: ", filename, "\n")
+                }
+            }
+        }
+    })
+    return kiana.response.Response(http.HTTPResponseHeader("HTTP/1.1", 200, "OK"), str.Str("Upload success"))
+}
+
+func upload_page(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
+    let body = str.Str("
+        <!doctype html>
+        <html>
+            <head>
+                <title>Pardo File Upload</title>
+                <style>
+                    body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f0f2f5; }
+                    .upload-container { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; }
+                    h1 { color: #1a73e8; }
+                    input[type=\"file\"] { margin: 1rem 0; }
+                    button { background-color: #1a73e8; color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; }
+                    button:hover { background-color: #1557b0; }
+                </style>
+            </head>
+            <body>
+                <div class=\"upload-container\">
+                    <h1>Upload File</h1>
+                    <form action=\"/upload\" method=\"post\" enctype=\"multipart/form-data\">
+                        <input type=\"file\" name=\"file\" />
+                        <br/>
+                        <button type=\"submit\">Upload</button>
+                    </form>
+                </div>
+            </body>
+        </html>
+    ")
+    let headers = http.HTTPResponseHeader("HTTP/1.1", 200, "OK")
+                        .add_header("Content-Type", "text/html; charset=UTF-8")
+    return kiana.response.Response(headers, body)
+}
+
 func main() : int {
     console.print("net-http-server: start\n")
     let app = kiana.application.Application(kiana.application.ApplicationConfig("0.0.0.0", 9002))
@@ -133,6 +184,8 @@ func main() : int {
     app.use_route("/file", func file_test)
     app.use_route("/jwt/set", func jwt_cookie_set)
     app.use_route("/jwt/view", func jwt_cookie_view)
+    app.use_route("/upload", func upload_test)
+    app.use_route("/upload_page", func upload_page)
     app.use_error_endpoint(404, func error_route)
     let rc = app.serve()
     console.print("net-http-server: exit with code", rc as int, "\n")
