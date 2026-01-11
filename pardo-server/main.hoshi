@@ -14,6 +14,7 @@ use dataProvider "share/dataProvider"
 use context "share/context"
 use types "share/types"
 use vec "vec"
+use crypto "crypto"
 use lang "builtin"
 
 let pcontext : context.PardoServerContext = null
@@ -27,6 +28,7 @@ let public_routes = hashMap.HashMap<str.Str, str.Str>()
     .put("/v1/package/info", "full-match")
     .put("/v1/package/version/list", "full-match")
     .put("/v1/package/version/info", "full-match")
+    .put("/v1/artifact/download", "starts-with")
 
 func check_admin_status() : none {
     let [_, err] = data_provider.get_user_by_username("jerry_chou")
@@ -559,7 +561,14 @@ func route_package_version_add(req: kiana.request.Request, params: hashMap.HashM
     let tag_name = dyn_cast<str.Str>(body["tag_name"])
     let revision_notes = dyn_cast<str.Str>(body["revision_notes"])
     let artifacts_json = dyn_cast<json.JSONList>(body["artifacts"])
+    let dependencies_json = dyn_cast<json.JSONDict>(body["dependencies"])
+
+    if (pkg_id == null || tag_name == null || revision_notes == null || artifacts_json == null || dependencies_json == null) {
+        return make_error_response("invalid request: missing required fields")
+    }
+
     let artifacts = json.JSONValue(artifacts_json).to_string()
+    let dependencies = json.JSONValue(dependencies_json).to_string()
 
     let [pkg, pkg_err] = data_provider.get_package_by_id(pkg_id.getInt())
     if (pkg_err != null) {
@@ -569,7 +578,7 @@ func route_package_version_add(req: kiana.request.Request, params: hashMap.HashM
         return make_error_response("permission denied")
     }
 
-    if (data_provider.add_package_version(pkg_id.getInt(), tag_name, revision_notes, artifacts) != dataProvider.ResultCode.Success) {
+    if (data_provider.add_package_version(pkg_id.getInt(), tag_name, revision_notes, artifacts, dependencies) != dataProvider.ResultCode.Success) {
         return make_error_response("failed to add version")
     }
     return kiana.response.Response(
@@ -601,7 +610,14 @@ func route_package_version_update(req: kiana.request.Request, params: hashMap.Ha
     let tag_name = dyn_cast<str.Str>(body["tag_name"])
     let revision_notes = dyn_cast<str.Str>(body["revision_notes"])
     let artifacts_json = dyn_cast<json.JSONList>(body["artifacts"])
+    let dependencies_json = dyn_cast<json.JSONDict>(body["dependencies"])
+
+    if (pkg_id == null || tag_name == null || revision_notes == null || artifacts_json == null || dependencies_json == null) {
+        return make_error_response("invalid request: missing required fields")
+    }
+
     let artifacts = json.JSONValue(artifacts_json).to_string()
+    let dependencies = json.JSONValue(dependencies_json).to_string()
 
     let [pkg, pkg_err] = data_provider.get_package_by_id(pkg_id.getInt())
     if (pkg_err != null) {
@@ -611,13 +627,296 @@ func route_package_version_update(req: kiana.request.Request, params: hashMap.Ha
         return make_error_response("permission denied")
     }
 
-    if (data_provider.update_package_version(pkg_id.getInt(), tag_name, revision_notes, artifacts) != dataProvider.ResultCode.Success) {
+    if (data_provider.update_package_version(pkg_id.getInt(), tag_name, revision_notes, artifacts, dependencies) != dataProvider.ResultCode.Success) {
         return make_error_response("failed to update version")
     }
     return kiana.response.Response(
         http.HTTPResponseHeader("HTTP/1.1", 200, "OK"),
         json.JSONDict()
             .put("status", str.Str("ok")) as json.JSONValue
+    )
+}
+
+// /v1/package/version/remove
+func route_package_version_remove(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
+    let [user_id, id_err] = get_current_user_id(req)
+    if (id_err != null) { return make_error_response("not authenticated") }
+    let [user, u_err] = data_provider.get_user_by_id(user_id)
+    if (u_err != null) { return make_error_response("user not found") }
+
+    let [body_json, err] = req.json()
+    if (err != null) { return make_error_response("invalid request: error parsing json") }
+    let body = dyn_cast<json.JSONDict>(body_json)
+    if (body.contains("package_id") == false || body.contains("tag_name") == false) {
+        return make_error_response("missing package_id or tag_name")
+    }
+    let pkg_id = dyn_cast<json.Numeric>(body["package_id"])
+    let tag_name = dyn_cast<str.Str>(body["tag_name"])
+
+    let [pkg, pkg_err] = data_provider.get_package_by_id(pkg_id.getInt())
+    if (pkg_err != null) { return make_error_response("package not found") }
+
+    if (pkg.author != user.username && user.permission != types.Permission.Administrator) {
+        return make_error_response("permission denied")
+    }
+
+    if (data_provider.delete_package_version(pkg_id.getInt(), tag_name) != dataProvider.ResultCode.Success) {
+        return make_error_response("failed to delete package version from database")
+    }
+
+    return kiana.response.Response(
+        http.HTTPResponseHeader("HTTP/1.1", 200, "OK"),
+        json.JSONDict()
+            .put("status", str.Str("ok")) as json.JSONValue
+    )
+}
+
+// /v1/artifact/upload
+func route_artifact_upload(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
+    let [user_id, id_err] = get_current_user_id(req)
+    if (id_err != null) { return make_error_response("not authenticated") }
+    let [user, u_err] = data_provider.get_user_by_id(user_id)
+    if (u_err != null) { return make_error_response("user not found") }
+
+    let package_id = -1
+    let version_tag = str.Str()
+    let response = make_error_response("failed to upload")
+
+    req.form_data(func[package_id, version_tag, response, user, data_provider, pcontext](name: str.Str, reader: kiana.request.FormDataReader) : none {
+        if (name == "package_id") {
+            let buf = reader.read(reader.size())
+            this.package_id := str.toInt(str.Str(buf.data))
+        } elif (name == "version") {
+            let buf = reader.read(reader.size())
+            this.version_tag := str.Str(buf.data)
+        } elif (name == "file") {
+            if (this.package_id == -1 || this.version_tag == "") {
+                this.response := make_error_response("missing package_id or version before file part")
+                return
+            }
+            
+            let [pkg, pkg_err] = data_provider.get_package_by_id(this.package_id)
+            if (pkg_err != null) {
+                this.response := make_error_response("package not found")
+                return
+            }
+            if (pkg.author != this.user.username && this.user.permission != types.Permission.Administrator) {
+                this.response := make_error_response("permission denied")
+                return
+            }
+
+            let cd = reader.headers["content-disposition"]
+            let filename_index = cd.find("filename=\"")
+            if (filename_index != -1) {
+                let filename_end = cd.find("\"", filename_index + 10)
+                if (filename_end != -1) {
+                    let filename = cd.substring(filename_index + 10, filename_end)
+                    let mime : str.Str = "application/octet-stream"
+                    if (reader.headers.contains("content-type")) {
+                        mime = reader.headers["content-type"]
+                    }
+
+                    let seed = str.format("{}-{}", filename, runtime.runtime_random_legacy_unsigned())
+                    let unique_id = crypto.hash.Hash.md5().feed(seed.data, seed.length).final().hexdigest()
+
+                    // Save to artifacts_dir/unique_id
+                    let dest_path = fs.Path(pcontext.config.artifacts_dir) / unique_id
+                    reader.save_as(str.Stringable(dest_path).to_string())
+
+                    if (data_provider.add_artifact(this.package_id, unique_id, this.version_tag, filename, mime, str.Stringable(dest_path).to_string()) == dataProvider.ResultCode.Success) {
+                        this.response := kiana.response.Response(
+                            http.HTTPResponseHeader("HTTP/1.1", 200, "OK"),
+                            json.JSONDict()
+                                .put("status", str.Str("ok"))
+                                .put("unique_id", unique_id) as json.JSONValue
+                        )
+                    } else {
+                        this.response := make_error_response("failed to register artifact in database")
+                    }
+                }
+            }
+        }
+    })
+
+    return response
+}
+
+// /v1/artifact/download/:id
+func route_artifact_download(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
+    if (params.contains("id") == false) {
+        return make_error_response("missing artifact id")
+    }
+    let unique_id = params["id"]
+    let [artifact, err] = data_provider.get_artifact_by_unique_id(unique_id)
+    if (err != null) {
+        return make_error_response("artifact not found")
+    }
+
+    let [f, f_err] = fs.open(artifact.destinations, "rb")
+    if (f_err != null) {
+        return make_error_response("artifact file not found on server")
+    }
+
+    return kiana.response.Response(
+        http.HTTPResponseHeader("HTTP/1.1", 200, "OK")
+            .add_header("Content-Type", artifact.mime)
+            .add_header("Content-Disposition", str.format("attachment; filename=\"{}\"", artifact.filename)),
+        f as file.AbstractFile
+    )
+}
+
+// /v1/artifact/list
+func route_artifact_list(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
+    let [body_json, err] = req.json()
+    if (err != null) { return make_error_response("invalid request: error parsing json") }
+    let body = dyn_cast<json.JSONDict>(body_json)
+    if (body.contains("package_id") == false || body.contains("version") == false) {
+        return make_error_response("missing package_id or version")
+    }
+    let pkg_id = dyn_cast<json.Numeric>(body["package_id"])
+    let version = dyn_cast<str.Str>(body["version"])
+
+    let [artifacts, a_err] = data_provider.get_artifacts_by_package_version(pkg_id.getInt(), version)
+    if (a_err != null) {
+        return make_error_response("failed to fetch artifacts")
+    }
+
+    let list = json.JSONList()
+    for (let i = 0; i < artifacts.length; i += 1) {
+        list.push(artifacts[i].to_json())
+    }
+
+    return kiana.response.Response(
+        http.HTTPResponseHeader("HTTP/1.1", 200, "OK"),
+        json.JSONDict()
+            .put("status", str.Str("ok"))
+            .put("data", list) as json.JSONValue
+    )
+}
+
+// /v1/artifact/remove
+func route_artifact_remove(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
+    let [user_id, id_err] = get_current_user_id(req)
+    if (id_err != null) { return make_error_response("not authenticated") }
+    let [user, u_err] = data_provider.get_user_by_id(user_id)
+    if (u_err != null) { return make_error_response("user not found") }
+
+    let [body_json, err] = req.json()
+    if (err != null) { return make_error_response("invalid request: error parsing json") }
+    let body = dyn_cast<json.JSONDict>(body_json)
+    if (body.contains("id") == false) {
+        return make_error_response("missing artifact id")
+    }
+    let unique_id = dyn_cast<str.Str>(body["id"])
+
+    let [artifact, a_err] = data_provider.get_artifact_by_unique_id(unique_id)
+    if (a_err != null) { return make_error_response("artifact not found") }
+
+    let [pkg, pkg_err] = data_provider.get_package_by_id(artifact.package_id)
+    if (pkg_err != null) { return make_error_response("associated package not found") }
+
+    if (pkg.author != user.username && user.permission != types.Permission.Administrator) {
+        return make_error_response("permission denied")
+    }
+
+    if (data_provider.delete_artifact(unique_id) != dataProvider.ResultCode.Success) {
+        return make_error_response("failed to delete artifact from database")
+    }
+
+    // Attempt to remove file
+    fs.Path(artifact.destinations).remove()
+
+    return kiana.response.Response(
+        http.HTTPResponseHeader("HTTP/1.1", 200, "OK"),
+        json.JSONDict()
+            .put("status", str.Str("ok")) as json.JSONValue
+    )
+}
+
+// GET /index/packages/:name/index
+func route_index_package_info(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
+    let name = params["name"]
+    let [pkg, pkg_err] = data_provider.get_package_by_name(name)
+    if (pkg_err != null) { return make_error_response("not found") }
+
+    let [versions, v_err] = data_provider.get_package_versions(pkg.id)
+    if (v_err != null) { return make_error_response("failed to fetch versions") }
+
+    let versions_list = json.JSONList()
+    for (let i = 0; i < versions.length; i += 1) {
+        versions_list.push(versions[i].tag_name)
+    }
+
+    return kiana.response.Response(
+        http.HTTPResponseHeader("HTTP/1.1", 200, "OK"),
+        json.JSONDict()
+            .put("status", str.Str("ok"))
+            .put("data", json.JSONDict()
+                .put("name", pkg.name)
+                .put("author", pkg.author)
+                .put("repository", pkg.repository)
+                .put("license", pkg.license)
+                .put("versions", versions_list)
+            ) as json.JSONValue
+    )
+}
+
+// GET /index/packages/:name/manifest/:version
+func route_index_package_manifest(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
+    let name = params["name"]
+    let version_tag = params["version"]
+
+    let [pkg, pkg_err] = data_provider.get_package_by_name(name)
+    if (pkg_err != null) { return make_error_response("not found") }
+
+    let [version, v_err] = data_provider.get_package_version(pkg.id, version_tag)
+    if (v_err != null) { return make_error_response("version not found") }
+
+    return kiana.response.Response(
+        http.HTTPResponseHeader("HTTP/1.1", 200, "OK"),
+        json.JSONDict()
+            .put("status", str.Str("ok"))
+            .put("data", json.JSONDict()
+                .put("name", pkg.name)
+                .put("version", version.tag_name)
+                .put("author", pkg.author)
+                .put("repository", pkg.repository)
+                .put("license", pkg.license)
+                .put("dependencies", json.parse(version.dependencies).unwrap())
+            ) as json.JSONValue
+    )
+}
+
+// GET /index/packages/:name/:version/:artifact
+func route_index_package_asset(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
+    let name = params["name"]
+    let version_tag = params["version"]
+    let artifact_filename = params["artifact"]
+
+    let [pkg, pkg_err] = data_provider.get_package_by_name(name)
+    if (pkg_err != null) { return make_error_response("not found") }
+
+    // Resolve version from artifact filename if possible, or search across all versions of this package
+    // resolve.hoshi uses: {version}-{platform}-{arch}.zip
+    // Let's try to find an artifact by filename for this package
+    
+    let query = data_provider.db.execute("select * from artifacts where package_id = ? and filename = ? and version = ?", pkg.id, artifact_filename, version_tag)
+    if (query.is_err()) { return make_error_response("invalid query") }
+    let [res, f_err] = query.unwrap().fetch_all()
+    if (f_err != null || res.length == 0) { return make_error_response("artifact not found") }
+    
+    let artifact = dataProvider.DataProviderHelper.convert_row_to_artifact(res[0])
+
+    let [f, file_err] = fs.open(artifact.destinations, "rb")
+    if (file_err != null) {
+        return make_error_response("artifact file not found on server")
+    }
+
+    return kiana.response.Response(
+        http.HTTPResponseHeader("HTTP/1.1", 200, "OK")
+            .add_header("Content-Type", artifact.mime)
+            .add_header("Content-Disposition", str.format("attachment; filename=\"{}\"", artifact.filename)),
+        f as file.AbstractFile
     )
 }
 
@@ -664,6 +963,14 @@ func main() : int {
     application.use_route("/v1/package/version/info", func route_package_version_info)
     application.use_route("/v1/package/version/add", func route_package_version_add)
     application.use_route("/v1/package/version/update", func route_package_version_update)
+    application.use_route("/v1/package/version/remove", func route_package_version_remove)
+    application.use_route("/v1/artifact/upload", func route_artifact_upload)
+    application.use_route("/v1/artifact/download/:id", func route_artifact_download)
+    application.use_route("/v1/artifact/list", func route_artifact_list)
+    application.use_route("/v1/artifact/remove", func route_artifact_remove)
+    application.use_route("/index/packages/:name/index", func route_index_package_info)
+    application.use_route("/index/packages/:name/manifest/:version", func route_index_package_manifest)
+    application.use_route("/index/packages/:name/:version/:artifact", func route_index_package_asset)
     application.serve()
 
     return 0

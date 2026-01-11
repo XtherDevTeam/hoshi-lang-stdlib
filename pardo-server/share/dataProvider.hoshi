@@ -6,6 +6,7 @@ use types "types"
 use crypto "crypto" 
 use fs "fs"
 use json "json"
+use lang "builtin"
 
 enum ResultCode {
     Success,
@@ -20,7 +21,8 @@ struct DataProviderHelper {
     static convert_row_to_user(row: sqlite.SQLRowResult) : types.User,
     static convert_row_to_package_information(row: sqlite.SQLRowResult) : types.PackageInformation,
     static convert_row_to_config(row: sqlite.SQLRowResult) : types.Config,
-    static convert_row_to_package_version(row: sqlite.SQLRowResult) : types.PackageVersion
+    static convert_row_to_package_version(row: sqlite.SQLRowResult) : types.PackageVersion,
+    static convert_row_to_artifact(row: sqlite.SQLRowResult) : types.Artifact
 }
 
 impl DataProviderHelper {
@@ -60,7 +62,18 @@ impl DataProviderHelper {
             .set_tag_name(dyn_cast<str.Str>(row["tag_name"]))
             .set_revision_notes(dyn_cast<str.Str>(row["revision_notes"]))
             .set_artifacts(dyn_cast<str.Str>(row["artifacts"]))
+            .set_dependencies(dyn_cast<str.Str>(row["dependencies"]))
             .set_created_at(dyn_cast<str.Str>(row["created_at"]))
+    },
+    static convert_row_to_artifact(row: sqlite.SQLRowResult) : types.Artifact {
+        return types.Artifact()
+            .set_id(dyn_cast<int>(row["id"]))
+            .set_package_id(dyn_cast<int>(row["package_id"]))
+            .set_unique_id(dyn_cast<str.Str>(row["unique_id"]))
+            .set_version(dyn_cast<str.Str>(row["version"]))
+            .set_filename(dyn_cast<str.Str>(row["filename"]))
+            .set_mime(dyn_cast<str.Str>(row["mime"]))
+            .set_destinations(dyn_cast<str.Str>(row["destinations"]))
     }
 }
 
@@ -86,8 +99,14 @@ struct DataProvider {
     delete_package(id: int) : lang.Result<bool, ResultCode>,
     get_package_versions(id: int) : lang.Result<vec.Vec<types.PackageVersion>, ResultCode>,
     get_package_version(id: int, tag_name: str.Str) : lang.Result<types.PackageVersion, ResultCode>,
-    add_package_version(package_id: int, tag_name: str.Str, revision_notes: str.Str, artifacts: str.Str) : ResultCode,
-    update_package_version(package_id: int, tag_name: str.Str, revision_notes: str.Str, artifacts: str.Str) : ResultCode,
+    add_package_version(package_id: int, tag_name: str.Str, revision_notes: str.Str, artifacts: str.Str, dependencies: str.Str) : ResultCode,
+    update_package_version(package_id: int, tag_name: str.Str, revision_notes: str.Str, artifacts: str.Str, dependencies: str.Str) : ResultCode,
+    delete_package_version(package_id: int, tag_name: str.Str) : ResultCode,
+    add_artifact(package_id: int, unique_id: str.Str, version: str.Str, filename: str.Str, mime: str.Str, destinations: str.Str) : ResultCode,
+    get_artifact_by_unique_id(unique_id: str.Str) : lang.Result<types.Artifact, ResultCode>,
+    get_artifact_by_name(package_id: int, version: str.Str, filename: str.Str) : lang.Result<types.Artifact, ResultCode>,
+    get_artifacts_by_package_version(package_id: int, version: str.Str) : lang.Result<vec.Vec<types.Artifact>, ResultCode>,
+    delete_artifact(unique_id: str.Str) : ResultCode,
     get_config() : lang.Result<types.Config, ResultCode>,
     update_config(host: str.Str, port: int, artifacts_dir: str.Str, secret_key: str.Str) : lang.Result<bool, ResultCode>
 }
@@ -268,11 +287,26 @@ impl DataProvider {
         return lang.Result<bool, ResultCode>.ok(true)
     },
     delete_package(id: int) : lang.Result<bool, ResultCode> {
+        // Cleanup artifacts from filesystem
+        let artifacts_query = this.db.execute("select destinations from artifacts where package_id = ?", id)
+        if (artifacts_query.is_ok()) {
+            let [res, err] = artifacts_query.unwrap().fetch_all()
+            if (err != null) {
+                return lang.Result<bool, ResultCode>.err(ResultCode.InvalidQuery)
+            }
+            for (let i = 0; i < res.length; i += 1) {
+                let row = res[i]
+                let dest = dyn_cast<str.Str>(row["destinations"])
+                fs.Path(dest).remove()
+            }
+        }
+
         let query = this.db.execute("delete from packages where id = ?", id)
         if (query.is_err()) {
             return lang.Result<bool, ResultCode>.err(ResultCode.InvalidQuery)
         }
         this.db.execute("delete from package_versions where package_id = ?", id)
+        this.db.execute("delete from artifacts where package_id = ?", id)
         return lang.Result<bool, ResultCode>.ok(true)
     },
     get_package_versions(id: int) : lang.Result<vec.Vec<types.PackageVersion>, ResultCode> {
@@ -301,15 +335,88 @@ impl DataProvider {
         }
         return lang.Result<types.PackageVersion, ResultCode>.ok(DataProviderHelper.convert_row_to_package_version(result.unwrap()[0]))
     },
-    add_package_version(package_id: int, tag_name: str.Str, revision_notes: str.Str, artifacts: str.Str) : ResultCode {
-        let query = this.db.execute("insert into package_versions (package_id, tag_name, revision_notes, artifacts) values (?, ?, ?, ?)", package_id, tag_name, revision_notes, artifacts)
+    add_package_version(package_id: int, tag_name: str.Str, revision_notes: str.Str, artifacts: str.Str, dependencies: str.Str) : ResultCode {
+        let query = this.db.execute("insert into package_versions (package_id, tag_name, revision_notes, artifacts, dependencies) values (?, ?, ?, ?, ?)", package_id, tag_name, revision_notes, artifacts, dependencies)
         if (query.is_err()) {
             return ResultCode.InvalidQuery
         }
         return ResultCode.Success
     },
-    update_package_version(package_id: int, tag_name: str.Str, revision_notes: str.Str, artifacts: str.Str) : ResultCode {
-        let query = this.db.execute("update package_versions set revision_notes = ?, artifacts = ? where package_id = ? and tag_name = ?", revision_notes, artifacts, package_id, tag_name)
+    update_package_version(package_id: int, tag_name: str.Str, revision_notes: str.Str, artifacts: str.Str, dependencies: str.Str) : ResultCode {
+        let query = this.db.execute("update package_versions set revision_notes = ?, artifacts = ?, dependencies = ? where package_id = ? and tag_name = ?", revision_notes, artifacts, dependencies, package_id, tag_name)
+        if (query.is_err()) {
+            return ResultCode.InvalidQuery
+        }
+        return ResultCode.Success
+    },
+    delete_package_version(package_id: int, tag_name: str.Str) : ResultCode {
+        // Cleanup artifacts from filesystem
+        let artifacts_query = this.db.execute("select destinations from artifacts where package_id = ? and version = ?", package_id, tag_name)
+        if (artifacts_query.is_ok()) {
+            let res = artifacts_query.unwrap().fetch_all()
+            if (res.is_ok()) {
+                let rows = res.unwrap()
+                for (let i = 0; i < rows.length; i += 1) {
+                    let row = rows[i]
+                    let dest = dyn_cast<str.Str>(row["destinations"])
+                    fs.Path(dest).remove()
+                }
+            }
+        }
+
+        let query = this.db.execute("delete from package_versions where package_id = ? and tag_name = ?", package_id, tag_name)
+        if (query.is_err()) {
+            return ResultCode.InvalidQuery
+        }
+        this.db.execute("delete from artifacts where package_id = ? and version = ?", package_id, tag_name)
+        return ResultCode.Success
+    },
+    add_artifact(package_id: int, unique_id: str.Str, version: str.Str, filename: str.Str, mime: str.Str, destinations: str.Str) : ResultCode {
+        let query = this.db.execute("insert into artifacts (package_id, unique_id, version, filename, mime, destinations) values (?, ?, ?, ?, ?, ?)", package_id, unique_id, version, filename, mime, destinations)
+        if (query.is_err()) {
+            return ResultCode.InvalidQuery
+        }
+        return ResultCode.Success
+    },
+    get_artifact_by_unique_id(unique_id: str.Str) : lang.Result<types.Artifact, ResultCode> {
+        let query = this.db.execute("select * from artifacts where unique_id = ?", unique_id)
+        if (query.is_err()) {
+            return lang.Result<types.Artifact, ResultCode>.err(ResultCode.InvalidQuery)
+        }
+        let result = query.unwrap().fetch_all()
+        if (result.is_err() || result.unwrap().length == 0) {
+            return lang.Result<types.Artifact, ResultCode>.err(ResultCode.InvalidQuery)
+        }
+        return lang.Result<types.Artifact, ResultCode>.ok(DataProviderHelper.convert_row_to_artifact(result.unwrap()[0]))
+    },
+    get_artifact_by_name(package_id: int, version: str.Str, filename: str.Str) : lang.Result<types.Artifact, ResultCode> {
+        let query = this.db.execute("select * from artifacts where package_id = ? and version = ? and filename = ?", package_id, version, filename)
+        if (query.is_err()) {
+            return lang.Result<types.Artifact, ResultCode>.err(ResultCode.InvalidQuery)
+        }
+        let result = query.unwrap().fetch_all()
+        if (result.is_err() || result.unwrap().length == 0) {
+            return lang.Result<types.Artifact, ResultCode>.err(ResultCode.InvalidQuery)
+        }
+        return lang.Result<types.Artifact, ResultCode>.ok(DataProviderHelper.convert_row_to_artifact(result.unwrap()[0]))
+    },
+    get_artifacts_by_package_version(package_id: int, version: str.Str) : lang.Result<vec.Vec<types.Artifact>, ResultCode> {
+        let query = this.db.execute("select * from artifacts where package_id = ? and version = ?", package_id, version)
+        if (query.is_err()) {
+            return lang.Result<vec.Vec<types.Artifact>, ResultCode>.err(ResultCode.InvalidQuery)
+        }
+        let result = query.unwrap().fetch_all()
+        if (result.is_err()) {
+            return lang.Result<vec.Vec<types.Artifact>, ResultCode>.err(ResultCode.InvalidQuery)
+        }
+        let artifacts = vec.Vec<types.Artifact>()
+        for (let i = 0; i < result.unwrap().length; i += 1) {
+            artifacts.push(DataProviderHelper.convert_row_to_artifact(result.unwrap()[i]))
+        }
+        return lang.Result<vec.Vec<types.Artifact>, ResultCode>.ok(artifacts)
+    },
+    delete_artifact(unique_id: str.Str) : ResultCode {
+        let query = this.db.execute("delete from artifacts where unique_id = ?", unique_id)
         if (query.is_err()) {
             return ResultCode.InvalidQuery
         }

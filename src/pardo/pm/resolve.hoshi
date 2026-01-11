@@ -54,7 +54,7 @@ impl DefaultPackageSource : package.PackageSource {
         if (body == null) {
             return lang.Result<package.PackageInformation, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.InvalidManifest)
         }
-        if (body.contains("error") || body.contains("data") == false) {
+        if (body.contains("message") || body.contains("data") == false) {
             return lang.Result<package.PackageInformation, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.NotFound)
         }
         let data = dyn_cast<json.JSONDict>(body["data"])
@@ -87,7 +87,7 @@ impl DefaultPackageSource : package.PackageSource {
         if (body == null) {
             return lang.Result<package.PackageManifest, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.InvalidManifest)
         }
-        if (body.contains("error") || body.contains("data") == false) {
+        if (body.contains("message") || body.contains("data") == false) {
             return lang.Result<package.PackageManifest, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.NotFound)
         }
         let data = dyn_cast<json.JSONDict>(body["data"])
@@ -101,7 +101,7 @@ impl DefaultPackageSource : package.PackageSource {
         return lang.Result<package.PackageManifest, package.PackageSourceQueryResultCode>.ok(manifest_object.unwrap())
     },
     query_asset_url(name: str.Str, version: str.Str, platform: str.Str, arch: str.Str) : str.Str {
-        return str.format("{}/packages/{}/{}-{}-{}.zip", this.remote, name, version, platform, arch)
+        return str.format("{}/packages/{}/{}/{}-{}.zip", this.remote, name, version, platform, arch)
     }
 }
 

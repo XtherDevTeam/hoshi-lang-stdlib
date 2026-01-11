@@ -27,7 +27,7 @@ create table packages (
 create table artifacts (
     id              integer primary key,
     package_id      integer not null,
-    uuid            string not null,
+    unique_id       string not null,
     version         string not null,
     filename        string not null,
     mime            string not null,
@@ -40,6 +40,7 @@ create table package_versions (
     tag_name        string not null,
     revision_notes  string not null,
     artifacts       string not null default '[]',
+    dependencies    string not null default '{}',
     created_at      timestamp default current_timestamp
 );
 

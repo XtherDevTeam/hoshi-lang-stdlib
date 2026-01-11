@@ -113,24 +113,27 @@ struct PackageVersion {
     tag_name: str.Str,
     revision_notes: str.Str,
     artifacts: str.Str,
+    dependencies: str.Str,
     created_at: str.Str,
-    constructor(package_id: int, tag_name: str.Str, revision_notes: str.Str, artifacts: str.Str),
+    constructor(package_id: int, tag_name: str.Str, revision_notes: str.Str, artifacts: str.Str, dependencies: str.Str),
     constructor(),
     set_id(id: int) : PackageVersion,
     set_package_id(package_id: int) : PackageVersion,
     set_tag_name(tag_name: str.Str) : PackageVersion,
     set_revision_notes(revision_notes: str.Str) : PackageVersion,
     set_artifacts(artifacts: str.Str) : PackageVersion,
+    set_dependencies(dependencies: str.Str) : PackageVersion,
     set_created_at(created_at: str.Str) : PackageVersion,
     to_json(): json.JSONValue
 }
 
 impl PackageVersion {
-    constructor(package_id: int, tag_name: str.Str, revision_notes: str.Str, artifacts: str.Str) {
+    constructor(package_id: int, tag_name: str.Str, revision_notes: str.Str, artifacts: str.Str, dependencies: str.Str) {
         this.package_id = package_id
         this.tag_name = tag_name
         this.revision_notes = revision_notes
         this.artifacts = artifacts
+        this.dependencies = dependencies
         this.id = 0
         this.created_at = ""
     },
@@ -157,6 +160,10 @@ impl PackageVersion {
         this.artifacts = artifacts
         return this
     },
+    set_dependencies(dependencies: str.Str) : PackageVersion {
+        this.dependencies = dependencies
+        return this
+    },
     set_created_at(created_at: str.Str) : PackageVersion {
         this.created_at = created_at
         return this
@@ -168,6 +175,7 @@ impl PackageVersion {
             .put("tag_name", this.tag_name)
             .put("revision_notes", this.revision_notes)
             .put("artifacts", json.parse(this.artifacts).unwrap())
+            .put("dependencies", json.parse(this.dependencies).unwrap())
             .put("created_at", this.created_at)
     }
 }
@@ -290,5 +298,78 @@ impl User {
             .put("description", this.description)
             .put("email", this.email)
             .put("permission", json.Numeric(this.permission))
+    }
+}
+
+struct Artifact {
+    id: int,
+    package_id: int,
+    unique_id: str.Str,
+    version: str.Str,
+    filename: str.Str,
+    mime: str.Str,
+    destinations: str.Str,
+    constructor(package_id: int, unique_id: str.Str, version: str.Str, filename: str.Str, mime: str.Str, destinations: str.Str),
+    constructor(),
+    set_id(id: int) : Artifact,
+    set_package_id(package_id: int) : Artifact,
+    set_unique_id(unique_id: str.Str) : Artifact,
+    set_version(version: str.Str) : Artifact,
+    set_filename(filename: str.Str) : Artifact,
+    set_mime(mime: str.Str) : Artifact,
+    set_destinations(destinations: str.Str) : Artifact,
+    to_json(): json.JSONValue
+}
+
+impl Artifact {
+    constructor(package_id: int, unique_id: str.Str, version: str.Str, filename: str.Str, mime: str.Str, destinations: str.Str) {
+        this.package_id = package_id
+        this.unique_id = unique_id
+        this.version = version
+        this.filename = filename
+        this.mime = mime
+        this.destinations = destinations
+        this.id = 0
+    },
+    constructor() {
+        return this
+    },
+    set_id(id: int) : Artifact {
+        this.id = id
+        return this
+    },
+    set_package_id(package_id: int) : Artifact {
+        this.package_id = package_id
+        return this
+    },
+    set_unique_id(unique_id: str.Str) : Artifact {
+        this.unique_id = unique_id
+        return this
+    },
+    set_version(version: str.Str) : Artifact {
+        this.version = version
+        return this
+    },
+    set_filename(filename: str.Str) : Artifact {
+        this.filename = filename
+        return this
+    },
+    set_mime(mime: str.Str) : Artifact {
+        this.mime = mime
+        return this
+    },
+    set_destinations(destinations: str.Str) : Artifact {
+        this.destinations = destinations
+        return this
+    },
+    to_json() : json.JSONValue {
+        return json.JSONDict()
+            .put("id", json.Numeric(this.id))
+            .put("package_id", json.Numeric(this.package_id))
+            .put("unique_id", this.unique_id)
+            .put("version", this.version)
+            .put("filename", this.filename)
+            .put("mime", this.mime)
+            .put("destinations", this.destinations)
     }
 }

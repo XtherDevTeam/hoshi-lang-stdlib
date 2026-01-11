@@ -94,6 +94,7 @@ LIBNET_EXPORT void libnet_socket_close(int fd) {
     #ifdef LIBNET_DEBUG
     printf("libnet_socket_close(): closing socket %d\n", fd);
     #endif
+    shutdown(fd, SHUT_RDWR);
     close_socket(fd);
 }
 
