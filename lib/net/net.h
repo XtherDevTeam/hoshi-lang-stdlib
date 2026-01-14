@@ -37,6 +37,7 @@ struct __WSAINIT {
 
 #define inet_aton(a, b) inet_pton(AF_INET, (a), (b))
 #define close_socket closesocket
+#define SHUT_RDWR SD_BOTH
 #else
 #include <unistd.h>
 #include <arpa/inet.h>
