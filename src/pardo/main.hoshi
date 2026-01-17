@@ -21,6 +21,7 @@ Commands:
 Options:
   -h, --help      Show help message
   -g, --global    Use global package manager
+  -r, --registry  Specify package registry URL
   --build-number  Print the build number of pardo
 ", self)
     console.print(help_msg)
@@ -84,6 +85,8 @@ func main() : int {
 
     let is_global = false
     let command : str.Str = ""
+    let registry_url : str.Str = ""
+
     for (let i = 1; i < argv.length; i += 1) {
         let arg : str.Str = argv[i]
         if (arg == "-h" || arg == "--help") {
@@ -91,7 +94,12 @@ func main() : int {
             return 0
         } elif (arg == "-g" || arg == "--global") {
             is_global = true
-        } elif (command == "") {
+        } elif (arg == "-r" || arg == "--registry") {
+            if (i + 1 < argv.length) {
+                registry_url = argv[i+1]
+                i += 1
+            }
+        } elif (command == "" && arg.startswith("-") == false) {
             command = arg
         }
     }
@@ -107,10 +115,15 @@ func main() : int {
         let pkg_name : str.Str = ""
         for (let i = 1; i < argv.length; i += 1) {
             let arg : str.Str = argv[i]
-            if (arg != "init" && arg != "-g" && arg != "--global") {
-                pkg_name = arg
-                break
+            if (arg == "init") { continue }
+            if (arg == "-g" || arg == "--global") { continue }
+            if (arg == "-r" || arg == "--registry") {
+                i += 1
+                continue
             }
+            if (arg.startswith("-")) { continue }
+            pkg_name = arg
+            break
         }
         if (pkg_name == "") {
             pkg_name = fs.Path.current_dir().filename()
@@ -126,30 +139,125 @@ func main() : int {
     }
 
     if (command == "install") {
-        let manifest_res = load_pardo_manifest()
-        if (manifest_res.is_err()) {
-            console.print(str.format("Error: {}\n", manifest_res.unwrap_err()))
-            return 1
+        let pkg_to_install : str.Str = ""
+        for (let i = 1; i < argv.length; i += 1) {
+            let arg : str.Str = argv[i]
+            if (arg == "install") { continue }
+            if (arg == "-g" || arg == "--global") { continue }
+            if (arg == "-r" || arg == "--registry") {
+                i += 1
+                continue
+            }
+            if (arg.startswith("-")) { continue }
+            pkg_to_install = arg
+            break
         }
-        
-        let source = pardo.pm.resolve.DefaultPackageSource()
-        let result = pm.install(manifest_res.unwrap(), source)
-        if (result.is_err()) {
-            console.print(str.format("Installation failed: {}\n", result.unwrap_err()))
-            return 1
+
+        let source_impl = pardo.pm.resolve.DefaultPackageSource()
+        if (registry_url != "") {
+            source_impl.set_remote(registry_url)
         }
-        console.print("Installation successful!\n")
-        return 0
+        let source : pardo.pm.package.PackageSource = source_impl
+
+        if (is_global) {
+            let manifest = pardo.pm.package.PackageManifest(
+                "global-install", "1.0.0", "", "", "", hashMap.HashMap<str.Str, str.Str>()
+            )
+            
+            if (pkg_to_install != "") {
+                let pkg_name = pkg_to_install
+                let pkg_version = str.Str("")
+                if (pkg_to_install.find("@") != -1) {
+                    let parts = pkg_to_install.split("@")
+                    if (parts.length >= 2) {
+                        pkg_name = parts[0]
+                        pkg_version = parts[1]
+                    }
+                }
+
+                if (pkg_version == "") {
+                    console.print(str.format("Resolving latest version for {}...\n", pkg_name))
+                    let pkg_info_res = source.query_package(pkg_name)
+                    if (pkg_info_res.is_err()) {
+                        console.print(str.format("Error: Could not find package {}\n", pkg_name))
+                        return 1
+                    }
+                    let pkg_info = pkg_info_res.unwrap()
+                    if (pkg_info.versions.length == 0) {
+                        console.print(str.format("Error: No versions found for package {}\n", pkg_name))
+                        return 1
+                    }
+                    pkg_version = ">=" + pkg_info.versions[0]
+                }
+                manifest.dependencies.put(pkg_name, pkg_version)
+            }
+            
+            let result = pm.install(manifest, source)
+            if (result.is_err()) {
+                console.print(str.format("Installation failed: {}\n", result.unwrap_err()))
+                return 1
+            }
+            console.print("Installation successful!\n")
+            return 0
+        } else {
+            let manifest_res = load_pardo_manifest()
+            if (manifest_res.is_err()) {
+                console.print(str.format("Error: {}\n", manifest_res.unwrap_err()))
+                return 1
+            }
+            let manifest = manifest_res.unwrap()
+
+            if (pkg_to_install != "") {
+                let pkg_name = pkg_to_install
+                let pkg_version = str.Str("")
+                if (pkg_to_install.find("@") != -1) {
+                    let parts = pkg_to_install.split("@")
+                    if (parts.length >= 2) {
+                        pkg_name = parts[0]
+                        pkg_version = parts[1]
+                    }
+                }
+
+                if (pkg_version == "") {
+                    console.print(str.format("Resolving latest version for {}...\n", pkg_name))
+                    let pkg_info_res = source.query_package(pkg_name)
+                    if (pkg_info_res.is_err()) {
+                        console.print(str.format("Error: Could not find package {}\n", pkg_name))
+                        return 1
+                    }
+                    let pkg_info = pkg_info_res.unwrap()
+                    if (pkg_info.versions.length == 0) {
+                        console.print(str.format("Error: No versions found for package {}\n", pkg_name))
+                        return 1
+                    }
+                    pkg_version = ">=" + pkg_info.versions[0]
+                }
+                manifest.dependencies.put(pkg_name, pkg_version)
+            }
+            
+            let result = pm.install(manifest, source)
+            if (result.is_err()) {
+                console.print(str.format("Installation failed: {}\n", result.unwrap_err()))
+                return 1
+            }
+            console.print("Installation successful!\n")
+            return 0
+        }
     }
 
     if (command == "remove") {
         let pkg_to_remove : str.Str = ""
         for (let i = 1; i < argv.length; i += 1) {
             let arg : str.Str = argv[i]
-            if (arg != "remove" && arg != "-g" && arg != "--global") {
-                pkg_to_remove = arg
-                break
+            if (arg == "remove") { continue }
+            if (arg == "-g" || arg == "--global") { continue }
+            if (arg == "-r" || arg == "--registry") {
+                i += 1
+                continue
             }
+            if (arg.startswith("-")) { continue }
+            pkg_to_remove = arg
+            break
         }
         
         if (pkg_to_remove == "") {

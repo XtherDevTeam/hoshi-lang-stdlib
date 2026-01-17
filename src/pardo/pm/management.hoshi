@@ -10,6 +10,8 @@ use console "console"
 use json "json"
 use os "os"
 use zip "zip"
+use net "net"
+use runtime "runtime"
 
 struct BasePackageManager {
     root_path: fs.Path,
@@ -50,6 +52,95 @@ impl BasePackageManager {
         if (pkg_path.mkdir(true) == false) {
             return lang.Result<bool, str.Str>.err("Failed to create package directory")
         }
+
+        let platform : str.Str = "universal"
+        let arch : str.Str = "universal"
+        
+        [[platform == "darwin"]] platform = "darwin"
+        [[platform == "linux"]] platform = "linux"
+        [[platform == "windows"]] platform = "windows"
+        
+        [[arch == "arm64"]] arch = "arm64"
+        [[arch == "amd64"]] arch = "amd64"
+
+        let asset_url = source.query_asset_url(pkg_name, pkg_version, platform, arch)
+        
+        let req_open = net.http.open("GET", asset_url)
+        if (req_open.is_err()) {
+            pkg_path.remove(true)
+            return lang.Result<bool, str.Str>.err(str.format("Failed to open HTTP request for {}", asset_url))
+        }
+
+        let resp_res = req_open.unwrap().send()
+        if (resp_res.is_err() || resp_res.unwrap().status_code() != 200) {
+            // Try fallback to universal
+            asset_url = source.query_asset_url(pkg_name, pkg_version, "universal", "universal")
+            let req_open_fb = net.http.open("GET", asset_url)
+            if (req_open_fb.is_ok()) {
+                resp_res = req_open_fb.unwrap().send()
+            }
+        }
+        
+        if (resp_res.is_err() || resp_res.unwrap().status_code() != 200) {
+            pkg_path.remove(true)
+            return lang.Result<bool, str.Str>.err(str.format("Failed to download package asset for {}@{}", pkg_name, pkg_version))
+        }
+        
+        let resp = resp_res.unwrap()
+        let reader = resp.reader()
+        
+        let temp_zip = fs.Path.temp_dir() / str.format("pardo-{}.zip", runtime.runtime_random_legacy_unsigned())
+        let f_zip_res = fs.open(temp_zip.to_string(), "wb")
+        if (f_zip_res.is_err()) {
+             pkg_path.remove(true)
+             return lang.Result<bool, str.Str>.err("Failed to create temporary zip file")
+        }
+
+        let f_zip = f_zip_res.unwrap()
+        let chunk_size = 65536
+        while (reader.is_eof() == false) {
+            let view = reader.read(chunk_size)
+            if (view.size > 0) {
+                f_zip.write(view.data)
+            } else {
+                break
+            }
+        }
+        f_zip.close()
+        
+        // Extract
+        let z_res = zip.open(temp_zip.to_string(), zip.CompressionLevel.Default, 'r')
+        if (z_res.is_err()) {
+            temp_zip.remove()
+            pkg_path.remove(true)
+            return lang.Result<bool, str.Str>.err("Failed to open downloaded zip archive")
+        }
+        
+        let z_file = z_res.unwrap()
+        let total = z_file.total()
+        for (let i = 0; i < total; i += 1) {
+            let entry_res = z_file.open(i)
+            if (entry_res.is_ok()) {
+                let entry = entry_res.unwrap()
+                let entry_dest = pkg_path / entry.name
+                if (entry.is_directory) {
+                    entry_dest.mkdir(true)
+                } else {
+                    let parent = entry_dest.parent()
+                    if (parent.exists() == false) { parent.mkdir(true) }
+                    
+                    let f_dest = fs.open(entry_dest.to_string(), "wb")
+                    if (f_dest.is_ok()) {
+                        let buf = new char[entry.size]()
+                        entry.read(buf)
+                        f_dest.unwrap().write(buf)
+                        f_dest.unwrap().close()
+                    }
+                }
+            }
+        }
+        z_file.close()
+        temp_zip.remove()
 
         return lang.Result<bool, str.Str>.ok(true)
     }
@@ -418,11 +509,6 @@ impl GlobalPackageManager : instance.PackageManagementBackend {
         let base = BasePackageManager(this.root_path)
         base.ensure_modules_dir(this.root_path)
         
-        let install_res = base.flatten_install(manifest, source)
-        if (install_res.is_err()) {
-            return install_res
-        }
-
         let ctx = resolve.PackageResolveContext(source)
         let res = resolve.solve_dependencies(manifest, ctx)
         if (res != resolve.PackageResolveResult.Success) {

@@ -226,11 +226,11 @@ impl ZipFile {
         return lang.Result<ZipFileEntry, str.Str>.ok(this.entry_singleton)
     },
     open(entry_index: int) : lang.Result<ZipFileEntry, str.Str> {
-        let entry_fp = zip_entry_openbyindex(this.zip_fp, entry_index)
-        if (entry_fp == 0) {
-            return lang.Result<ZipFileEntry, str.Str>.err(str.Str("Failed to open entry"))
+        let err = zip_entry_openbyindex(this.zip_fp, entry_index)
+        if (err < 0) {
+            return lang.Result<ZipFileEntry, str.Str>.err(str.Str.from_c_str(zip_strerror(err)))
         }
-        return lang.Result<ZipFileEntry, str.Str>.ok(ZipFileEntry(entry_fp))
+        return lang.Result<ZipFileEntry, str.Str>.ok(ZipFileEntry(this.zip_fp))
     }
 }
 
