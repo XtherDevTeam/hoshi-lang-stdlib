@@ -19,7 +19,8 @@ struct PackageManifest {
     set_repository(repository: str.Str) : PackageManifest,
     set_license(license: str.Str) : PackageManifest,
     set_dependencies(dependencies: hashMap.HashMap<str.Str, str.Str>) : PackageManifest,
-    static from_json(obj: json.JSONValue) : lang.Result<PackageManifest, str.Str>
+    static from_json(obj: json.JSONValue) : lang.Result<PackageManifest, str.Str>,
+    to_json() : json.JSONValue
 }
 
 impl PackageManifest {
@@ -81,7 +82,7 @@ impl PackageManifest {
         }
         let dependencies_map = hashMap.HashMap<str.Str, str.Str>()
         let dependencies_keys = dependencies_obj.keys()
-        for (let i = 0;i < dependencies_keys.size();i += 1) {
+        for (let i = 0;i < dependencies_keys.length;i += 1) {
             let key = dependencies_keys[i]
             let value = dependencies_obj[key]
             let value_str = dyn_cast<str.Str>(value)
@@ -91,14 +92,11 @@ impl PackageManifest {
             dependencies_map.put(key, value_str)
         }
         return lang.Result<PackageManifest, str.Str>.ok(PackageManifest(name_str, version_str, author_str, repository_str, license_str, dependencies_map))
-    }
-}
-
-impl PackageManifest : json.JSONSerializable {
+    },
     to_json() : json.JSONValue {
         let dependencies_obj = json.JSONDict()
         let dependencies_keys = this.dependencies.keys()
-        for (let i = 0; i < dependencies_keys.size(); i += 1) {
+        for (let i = 0; i < dependencies_keys.length; i += 1) {
             let key = dependencies_keys[i]
             let value = this.dependencies[key]
             dependencies_obj.put(key, value)
@@ -114,6 +112,14 @@ impl PackageManifest : json.JSONSerializable {
     }
 }
 
+/*
+impl PackageManifest : json.JSONSerializable {
+    to_json() : json.JSONValue {
+        return this.to_json()
+    }
+}
+*/
+
 struct PackageInformation {
     name: str.Str,
     author: str.Str,
@@ -123,6 +129,7 @@ struct PackageInformation {
     constructor(),
     constructor(name: str.Str, author: str.Str, repository: str.Str, license: str.Str, versions: vec.Vec<str.Str>),
     static from_json(obj: json.JSONValue) : lang.Result<PackageInformation, str.Str>,
+    to_json() : json.JSONValue,
     set_name(name: str.Str) : PackageInformation,
     set_author(author: str.Str) : PackageInformation,
     set_repository(repository: str.Str) : PackageInformation,
@@ -179,7 +186,7 @@ impl PackageInformation {
             return lang.Result<PackageInformation, str.Str>.err("Invalid properties in JSON object")
         }
         let versions_vec = vec.Vec<str.Str>()
-        for (let i = 0; i < versions_arr.size(); i += 1) {
+        for (let i = 0; i < versions_arr.length; i += 1) {
             let version = versions_arr[i]
             let version_str = dyn_cast<str.Str>(version)
             if (version_str == null) {
@@ -188,13 +195,10 @@ impl PackageInformation {
             versions_vec.push(version_str)
         }
         return lang.Result<PackageInformation, str.Str>.ok(PackageInformation(name_str, author_str, repository_str, license_str, versions_vec))
-    }
-}
-
-impl PackageInformation : json.JSONSerializable {
+    },
     to_json() : json.JSONValue {
         let versions_arr = json.JSONList()
-        for (let i = 0; i < this.versions.size(); i += 1) {
+        for (let i = 0; i < this.versions.length; i += 1) {
             let version = this.versions[i]
             versions_arr.push(version)
         }
@@ -206,6 +210,7 @@ impl PackageInformation : json.JSONSerializable {
             .put("versions", versions_arr)
         return obj
     }
+
 }
 
 enum PackageSourceQueryResultCode {
@@ -220,4 +225,182 @@ interface PackageSource {
     query_package(name: str.Str) : lang.Result<PackageInformation, PackageSourceQueryResultCode>,
     query_package_manifest(name: str.Str, version: str.Str) : lang.Result<PackageManifest, PackageSourceQueryResultCode>,
     query_asset_url(name: str.Str, version: str.Str, platform: str.Str, arch: str.Str) : str.Str
+}
+
+struct BuildTarget {
+    type: str.Str,
+    filename: str.Str,
+    sourcefile: str.Str,
+    flags: str.Str,
+    platform: str.Str,
+    arch: str.Str,
+    defines: hashMap.HashMap<str.Str, str.Str>,
+    visible: bool,
+    constructor(),
+    constructor(type: str.Str, filename: str.Str, sourcefile: str.Str, flags: str.Str, platform: str.Str, arch: str.Str, defines: hashMap.HashMap<str.Str, str.Str>, visible: bool),
+    static from_json(obj: json.JSONValue) : BuildTarget,
+    to_json() : json.JSONValue
+}
+
+impl BuildTarget {
+    constructor() {
+        this.type = "binary"
+        this.filename = ""
+        this.sourcefile = "src/main.hoshi"
+        this.flags = ""
+        this.platform = "universal"
+        this.arch = "universal"
+        this.defines = hashMap.HashMap<str.Str, str.Str>()
+        this.visible = true
+    },
+    constructor(type: str.Str, filename: str.Str, sourcefile: str.Str, flags: str.Str, platform: str.Str, arch: str.Str, defines: hashMap.HashMap<str.Str, str.Str>, visible: bool) {
+        this.type = type
+        this.filename = filename
+        this.sourcefile = sourcefile
+        this.flags = flags
+        this.platform = platform
+        this.arch = arch
+        this.defines = defines
+        this.visible = visible
+    },
+    static from_json(obj: json.JSONValue) : BuildTarget {
+        let tree = dyn_cast<json.JSONDict>(obj)
+        if (tree == null) {
+            return BuildTarget()
+        }
+        
+        let target = BuildTarget()
+        
+        if (tree.contains("type") && tree["type"] interfaceof str.Str) {
+            target.type = dyn_cast<str.Str>(tree["type"])
+        }
+        
+        if (tree.contains("filename") && tree["filename"] interfaceof str.Str) {
+            target.filename = dyn_cast<str.Str>(tree["filename"])
+        }
+        
+        if (tree.contains("sourcefile") && tree["sourcefile"] interfaceof str.Str) {
+            target.sourcefile = dyn_cast<str.Str>(tree["sourcefile"])
+        }
+        
+        if (tree.contains("flags") && tree["flags"] interfaceof str.Str) {
+            target.flags = dyn_cast<str.Str>(tree["flags"])
+        }
+        
+        if (tree.contains("platform") && tree["platform"] interfaceof str.Str) {
+            target.platform = dyn_cast<str.Str>(tree["platform"])
+        }
+
+        if (tree.contains("arch") && tree["arch"] interfaceof str.Str) {
+            target.arch = dyn_cast<str.Str>(tree["arch"])
+        }
+        
+        if (tree.contains("visible") && tree["visible"] interfaceof bool) {
+            target.visible = dyn_cast<bool>(tree["visible"])
+        }
+        
+        if (tree.contains("defines") && tree["defines"] interfaceof json.JSONDict) {
+            let defines_dict = dyn_cast<json.JSONDict>(tree["defines"])
+            let keys = defines_dict.keys()
+            for (let i = 0; i < keys.length; i += 1) {
+                let key = keys[i]
+                let val = defines_dict[key]
+                if (val interfaceof str.Str) {
+                    target.defines.put(key, dyn_cast<str.Str>(val))
+                }
+            }
+        }
+        
+        return target
+    },
+    to_json() : json.JSONValue {
+        let defines_obj = json.JSONDict()
+        let keys = this.defines.keys()
+        for (let i = 0; i < keys.length; i += 1) {
+            let key = keys[i]
+            defines_obj.put(key, this.defines[key])
+        }
+        
+        let obj = json.JSONDict()
+            .put("type", this.type)
+            .put("filename", this.filename)
+            .put("sourcefile", this.sourcefile)
+            .put("flags", this.flags)
+            .put("platform", this.platform)
+            .put("arch", this.arch)
+            .put("visible", this.visible)
+            .put("defines", defines_obj)
+        return obj
+    }
+}
+
+struct BuildManifest {
+    minimum_pm_version: int,
+    minimum_hoshi_build: int,
+    targets: hashMap.HashMap<str.Str, BuildTarget>,
+    constructor(),
+    constructor(pm_ver: int, hoshi_build: int, targets: hashMap.HashMap<str.Str, BuildTarget>),
+    static from_json(obj: json.JSONValue) : lang.Result<BuildManifest, str.Str>,
+    to_json() : json.JSONValue
+}
+
+impl BuildManifest {
+    constructor() {
+        this.minimum_pm_version = 0
+        this.minimum_hoshi_build = 0
+        this.targets = hashMap.HashMap<str.Str, BuildTarget>()
+    },
+    constructor(pm_ver: int, hoshi_build: int, targets: hashMap.HashMap<str.Str, BuildTarget>) {
+        this.minimum_pm_version = pm_ver
+        this.minimum_hoshi_build = hoshi_build
+        this.targets = targets
+    },
+    static from_json(obj: json.JSONValue) : lang.Result<BuildManifest, str.Str> {
+        let tree = dyn_cast<json.JSONDict>(obj)
+        if (tree == null) {
+            return lang.Result<BuildManifest, str.Str>.err("Expected a JSON object for BuildManifest")
+        }
+        
+        let pm_ver = 0
+        let hoshi_build = 0
+        
+        let pm_ver_val = tree["minimum_pm_version"]
+        if (pm_ver_val != null && pm_ver_val interfaceof json.Numeric) {
+            let pm_ver_num = dyn_cast<json.Numeric>(pm_ver_val)
+            pm_ver = pm_ver_num.getInt()
+        }
+        
+        let hoshi_build_val = tree["minimum_hoshi_build"]
+        if (hoshi_build_val != null && hoshi_build_val interfaceof json.Numeric) {
+            let hoshi_build_num = dyn_cast<json.Numeric>(hoshi_build_val)
+            hoshi_build = hoshi_build_num.getInt()
+        }
+        
+        let targets_map = hashMap.HashMap<str.Str, BuildTarget>()
+        let targets_val = tree["targets"]
+        if (targets_val != null && targets_val interfaceof json.JSONDict) {
+            let targets_dict = dyn_cast<json.JSONDict>(targets_val)
+            let keys = targets_dict.keys()
+            for (let i = 0; i < keys.length; i += 1) {
+                let key = keys[i]
+                targets_map.put(key, BuildTarget.from_json(targets_dict[key]))
+            }
+        }
+        
+        return lang.Result<BuildManifest, str.Str>.ok(BuildManifest(pm_ver, hoshi_build, targets_map))
+    },
+    to_json() : json.JSONValue {
+        let targets_obj = json.JSONDict()
+        let keys = this.targets.keys()
+        for (let i = 0; i < keys.length; i += 1) {
+            let key = keys[i]
+            targets_obj.put(key, this.targets[key].to_json())
+        }
+        
+        let obj = json.JSONDict()
+            .put("minimum_pm_version", json.Numeric(this.minimum_pm_version))
+            .put("minimum_hoshi_build", json.Numeric(this.minimum_hoshi_build))
+            .put("targets", targets_obj)
+        return obj
+    }
 }

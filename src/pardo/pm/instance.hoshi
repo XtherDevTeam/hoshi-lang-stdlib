@@ -1,0 +1,18 @@
+use str "str"
+use fs "fs"
+use file "file"
+use io "io"
+use sqlite "sqlite"
+use runtime "runtime"
+use package "package"
+use lang "builtin"
+
+interface PackageManagementBackend {
+    install(manifest: package.PackageManifest, source: package.PackageSource) : lang.Result<bool, str.Str>,
+    remove(name: str.Str, manifest: package.PackageManifest) : lang.Result<bool, str.Str>,
+    init(name: str.Str) : lang.Result<bool, str.Str>,
+    build(manifest: package.PackageManifest, build_manifest: package.BuildManifest) : lang.Result<bool, str.Str>,
+    package(manifest: package.PackageManifest, build_manifest: package.BuildManifest) : lang.Result<bool, str.Str>,
+    is_installed(name: str.Str, version: str.Str) : bool,
+    get_root_path() : fs.Path
+}

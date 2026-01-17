@@ -1,0 +1,16 @@
+{
+    "targets": {
+        "binary": {
+            "flags": "",
+            "filename": "columbina",
+            "sourcefile": "index.hoshi",
+            "arch": "universal",
+            "defines": {},
+            "visible": true,
+            "platform": "universal",
+            "type": "binary"
+        }
+    },
+    "minimum_hoshi_build": 60,
+    "minimum_pm_version": 1
+}

@@ -1,0 +1,32 @@
+use console "console"
+use str "str"
+
+interface Kuuhenki {
+    follow() : none,
+    say() : none
+}
+
+struct Columbina {
+    name: str.Str,
+    constructor(),
+    interact_with_kuuhenki() : Kuuhenki,
+    say() : str.Str
+}
+
+impl Columbina {
+    constructor() {
+        this.name = "Columbina Hyposelenia"
+    },
+    say() : str.Str {
+        return "♪ O little dove, child of the moon ♪ ♪ Though dust may stain your fair white feathers, though you lie down not in a warm embrace ♪ ♪ May the moon be with you in your slumber ♪"
+    }
+}
+
+func columbina() : Columbina {
+    return Columbina()
+}
+
+func main() : int {
+    console.print(columbina().say())
+    return 0
+}

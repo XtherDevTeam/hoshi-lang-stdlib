@@ -1,0 +1,469 @@
+use str "str"
+use fs "fs"
+use vec "vec"
+use hashMap "hashMap"
+use package "package"
+use resolve "resolve"
+use lang "builtin"
+use instance "instance"
+use console "console"
+use json "json"
+use os "os"
+use zip "zip"
+
+struct BasePackageManager {
+    root_path: fs.Path,
+    constructor(root_path: fs.Path),
+    ensure_modules_dir(path: fs.Path) : bool,
+    flatten_install(manifest: package.PackageManifest, source: package.PackageSource) : lang.Result<bool, str.Str>,
+    create_symlink(link: fs.Path, target: fs.Path) : bool
+}
+
+impl BasePackageManager {
+    constructor(root_path: fs.Path) {
+        this.root_path = root_path
+    },
+    ensure_modules_dir(path: fs.Path) : bool {
+        if (path.exists() == false) {
+            return path.mkdir(true)
+        }
+        return true
+    },
+    create_symlink(link: fs.Path, target: fs.Path) : bool {
+        if (link.exists()) {
+            link.remove()
+        }
+        return target.symlink_to(link)
+    },
+    flatten_install(manifest: package.PackageManifest, source: package.PackageSource) : lang.Result<bool, str.Str> {
+        let pkg_name = manifest.name
+        let pkg_version = manifest.version
+        let pkg_dir_name = str.format("{}@{}", pkg_name, pkg_version)
+        let pkg_path = this.root_path / pkg_dir_name
+        
+        if (pkg_path.exists()) {
+            return lang.Result<bool, str.Str>.ok(true)
+        }
+
+        console.print(str.format("Installing {}@{}...\n", pkg_name, pkg_version))
+        
+        if (pkg_path.mkdir(true) == false) {
+            return lang.Result<bool, str.Str>.err("Failed to create package directory")
+        }
+
+        return lang.Result<bool, str.Str>.ok(true)
+    }
+}
+
+struct ProjectLocalPackageManager {
+    root_path: fs.Path,
+    constructor(),
+    save_manifest(manifest: package.PackageManifest) : lang.Result<bool, str.Str>,
+    save_build_manifest(manifest: package.BuildManifest) : lang.Result<bool, str.Str>,
+    prune(manifest: package.PackageManifest, source: package.PackageSource) : lang.Result<bool, str.Str>,
+    build(manifest: package.PackageManifest, build_manifest: package.BuildManifest) : lang.Result<bool, str.Str>,
+    package(manifest: package.PackageManifest, build_manifest: package.BuildManifest) : lang.Result<bool, str.Str>,
+    recursive_zip(z_file: zip.ZipFile, current_path: fs.Path, root_path: fs.Path, zip_name: str.Str) : bool
+}
+
+impl ProjectLocalPackageManager {
+    constructor() {
+        this.root_path = fs.Path.current_dir() / ".pardo_modules"
+    },
+    save_manifest(manifest: package.PackageManifest) : lang.Result<bool, str.Str> {
+        let manifest_val = manifest.to_json()
+        let manifest_str = manifest_val.to_string()
+        let f = fs.open("pardo.json", "w")
+        if (f.is_err()) {
+            return lang.Result<bool, str.Str>.err("Failed to open pardo.json for writing")
+        }
+        f.unwrap().write(manifest_str.data)
+        f.unwrap().close()
+        return lang.Result<bool, str.Str>.ok(true)
+    },
+    save_build_manifest(manifest: package.BuildManifest) : lang.Result<bool, str.Str> {
+        let manifest_val = manifest.to_json()
+        let manifest_str = manifest_val.to_string()
+        let f = fs.open("build.json", "w")
+        if (f.is_err()) {
+            return lang.Result<bool, str.Str>.err("Failed to open build.json for writing")
+        }
+        f.unwrap().write(manifest_str.data)
+        f.unwrap().close()
+        return lang.Result<bool, str.Str>.ok(true)
+    },
+    prune(manifest: package.PackageManifest, source: package.PackageSource) : lang.Result<bool, str.Str> {
+        let ctx = resolve.PackageResolveContext(source)
+        let res = resolve.solve_dependencies(manifest, ctx)
+        if (res != resolve.PackageResolveResult.Success) {
+            return lang.Result<bool, str.Str>.err("Dependency resolution for pruning failed")
+        }
+
+        let required_dirs = hashMap.HashMap<str.Str, bool>()
+        let resolved_names = ctx.resolved_versions.keys()
+        for (let i = 0; i < resolved_names.length; i += 1) {
+            let name = resolved_names[i]
+            let ver = ctx.get_resolved_version(name)
+            let ver_str = str.Stringable(ver).to_string()
+            required_dirs.put(str.format("{}@{}", name, ver_str), true)
+        }
+
+        // Direct dependency symlinks
+        let direct_deps = manifest.dependencies.keys()
+        for (let i = 0; i < direct_deps.length; i += 1) {
+            required_dirs.put(direct_deps[i], true)
+        }
+
+        let existing_entries = this.root_path.listdir()
+        for (let i = 0; i < existing_entries.length; i += 1) {
+            let entry = existing_entries[i]
+            let filename = entry.filename()
+            if (required_dirs.contains(filename) == false) {
+                console.print(str.format("Pruning unused package entry: {}\n", filename))
+                entry.remove(true)
+            }
+        }
+        return lang.Result<bool, str.Str>.ok(true)
+    },
+    build(manifest: package.PackageManifest, build_manifest: package.BuildManifest) : lang.Result<bool, str.Str> {
+        let bin_dir = fs.Path.current_dir() / "bin"
+        if (bin_dir.exists() == false) {
+            bin_dir.mkdir(true)
+        }
+
+        let hoshi_lang_exec : str.Str = "hoshi_lang"
+        let p_build_num = os.popen(hoshi_lang_exec + " --build-number", "r")
+        if (p_build_num.is_err()) {
+            return lang.Result<bool, str.Str>.err("Failed to execute hoshi_lang --build-number. Is hoshi_lang installed and in PATH?")
+        }
+        let build_num_buffer = p_build_num.unwrap().read(1023)
+        build_num_buffer.data[build_num_buffer.size] = '\0'
+        let build_num_str = str.Str(build_num_buffer.data).trim()
+        let hoshi_build_num = str.toInt(build_num_str)
+        p_build_num.unwrap().close()
+
+        if (hoshi_build_num < build_manifest.minimum_hoshi_build) {
+            return lang.Result<bool, str.Str>.err(str.format("hoshi_lang build number {} is less than minimum required {}", hoshi_build_num, build_manifest.minimum_hoshi_build))
+        }
+
+        let target_names = build_manifest.targets.keys()
+        for (let i = 0; i < target_names.length; i += 1) {
+            let name = target_names[i]
+            let target = build_manifest.targets[name]
+            
+            console.print(str.format("Building target: {}...\n", name))
+            
+            let output_path = bin_dir / target.filename
+            let cmd = str.format("{} -o {} ", hoshi_lang_exec, output_path.to_string())
+            
+            if (target.type == "static-lib") {
+                cmd = cmd + "--build-type static-lib "
+            } elif (target.type == "shared-lib") {
+                cmd = cmd + "--build-type shared-lib "
+            }
+            
+            if (target.flags.length > 0) {
+                cmd = cmd + target.flags + " "
+            }
+            
+            let defines_keys = target.defines.keys()
+            for (let j = 0; j < defines_keys.length; j += 1) {
+                let d_key = defines_keys[j]
+                let d_val = target.defines[d_key]
+                if (d_val.find(' ') != -1) {
+                    cmd = cmd + str.format("-D {} \"{}\" ", d_key, d_val)
+                } else {
+                    cmd = cmd + str.format("-D {} {} ", d_key, d_val)
+                }
+            }
+            
+            // Use specified sourcefile
+            cmd = cmd + target.sourcefile + " -I src"
+            
+            console.print(str.format("Running command: {}\n", cmd))
+            let exit_code = os.system(cmd)
+            if (exit_code != 0) {
+                return lang.Result<bool, str.Str>.err(str.format("Build failed for target {} with exit code {}", name, exit_code))
+            }
+        }
+
+        return lang.Result<bool, str.Str>.ok(true)
+    },
+    package(manifest: package.PackageManifest, build_manifest: package.BuildManifest) : lang.Result<bool, str.Str> {
+        let build_res = this.build(manifest, build_manifest)
+        if (build_res.is_err()) {
+            return build_res
+        }
+
+        // Platform/Arch detection
+        let platform = "universal"
+        let arch = "universal"
+        
+        let p_where = os.popen("hoshi_lang -w", "r")
+        if (p_where.is_ok()) {
+            let where_buffer = p_where.unwrap().read(1023)
+            where_buffer.data[where_buffer.size] = '\0'
+            let where_out = str.Str(where_buffer.data).trim()
+            p_where.unwrap().close()
+            if (where_out.find("darwin") != -1) {
+                platform = "darwin"
+            } elif (where_out.find("linux") != -1) {
+                platform = "linux"
+            } elif (where_out.find("windows") != -1) {
+                platform = "windows"
+            }
+        }
+
+        let zip_name = str.format("{}-{}-{}.zip", manifest.name, platform, arch)
+        console.print(str.format("Creating package artifact: {}\n", zip_name))
+        
+        let z_res = zip.open(zip_name, zip.CompressionLevel.Default, 'w')
+        if (z_res.is_err()) {
+            return lang.Result<bool, str.Str>.err("Failed to create zip file: " + z_res.unwrap_err())
+        }
+        let z_file = z_res.unwrap()
+        
+        let project_root = fs.Path.current_dir()
+        this.recursive_zip(z_file, project_root, project_root, zip_name)
+        
+        z_file.close()
+        return lang.Result<bool, str.Str>.ok(true)
+    },
+    recursive_zip(z_file: zip.ZipFile, current_path: fs.Path, root_path: fs.Path, zip_name: str.Str) : bool {
+        let entries = current_path.listdir()
+        for (let i = 0; i < entries.length; i += 1) {
+            let entry = entries[i]
+            let filename = entry.filename()
+            
+            // Skip .pardo_modules, .git, .DS_Store and the zip file itself
+            if (filename == ".pardo_modules" || filename == ".git" || filename == ".DS_Store" || filename == zip_name) {
+                continue
+            }
+            
+            if (entry.is_directory()) {
+                this.recursive_zip(z_file, entry, root_path, zip_name)
+            } elif (entry.is_file()) {
+                let entry_str = entry.to_string()
+                let root_str = root_path.to_string()
+                let rel_path : str.Str = ""
+                
+                if (entry_str.startswith(root_str)) {
+                    rel_path = entry_str.substring(root_str.length as int, entry_str.length as int)
+                    // Remove leading slash/backslash
+                    while (rel_path.length > 0 && (rel_path[0] == '/' || rel_path[0] == '\\')) {
+                        rel_path = rel_path.substring(1, rel_path.length as int)
+                    }
+                } else {
+                    rel_path = filename
+                }
+                
+                let f_res = fs.open(entry_str, "r")
+                if (f_res.is_ok()) {
+                    let f = f_res.unwrap()
+                    let data = f.read(f.size())
+                    f.close()
+                    
+                    let entry_res = z_file.open(rel_path)
+                    if (entry_res.is_ok()) {
+                        let z_entry = entry_res.unwrap()
+                        z_entry.write(data.data)
+                        z_entry.close()
+                    } else {
+                        console.print(str.format("Warning: Failed to add {} to zip: {}\n", rel_path, entry_res.unwrap_err()))
+                    }
+                }
+            }
+        }
+        return true
+    }
+}
+
+impl ProjectLocalPackageManager : instance.PackageManagementBackend {
+    install(manifest: package.PackageManifest, source: package.PackageSource) : lang.Result<bool, str.Str> {
+        let base = BasePackageManager(this.root_path)
+        base.ensure_modules_dir(this.root_path)
+        
+        let ctx = resolve.PackageResolveContext(source)
+        let res = resolve.solve_dependencies(manifest, ctx)
+        if (res != resolve.PackageResolveResult.Success) {
+            return lang.Result<bool, str.Str>.err("Dependency resolution failed")
+        }
+
+        let resolved_names = ctx.resolved_versions.keys()
+        for (let i = 0; i < resolved_names.length; i += 1) {
+            let name = resolved_names[i]
+            let ver = ctx.get_resolved_version(name)
+            let ver_str = str.Stringable(ver).to_string()
+            
+            let sub_manifest_res = source.query_package_manifest(name, ver_str)
+            if (sub_manifest_res.is_err()) {
+                return lang.Result<bool, str.Str>.err(str.format("Failed to query manifest for {}@{}", name, ver_str))
+            }
+            let sub_manifest = sub_manifest_res.unwrap()
+            
+            let install_res = base.flatten_install(sub_manifest, source)
+            if (install_res.is_err()) {
+                return install_res
+            }
+
+            let pkg_modules_dir = this.root_path / str.format("{}@{}", name, ver_str) / ".pardo_modules"
+            base.ensure_modules_dir(pkg_modules_dir)
+            
+            let deps_keys = sub_manifest.dependencies.keys()
+            for (let j = 0; j < deps_keys.length; j += 1) {
+                let dep_name = deps_keys[j]
+                let dep_ver = ctx.get_resolved_version(dep_name)
+                if (dep_ver != null) {
+                    let dep_ver_str = str.Stringable(dep_ver).to_string()
+                    let link_path = pkg_modules_dir / dep_name
+                    let target_path = this.root_path / str.format("{}@{}", dep_name, dep_ver_str)
+                    base.create_symlink(link_path, target_path)
+                }
+            }
+        }
+
+        let direct_deps = manifest.dependencies.keys()
+        for (let i = 0; i < direct_deps.length; i += 1) {
+            let name = direct_deps[i]
+            let ver = ctx.get_resolved_version(name)
+            if (ver != null) {
+                let ver_str = str.Stringable(ver).to_string()
+                let link_path = this.root_path / name
+                let target_path = this.root_path / str.format("{}@{}", name, ver_str)
+                base.create_symlink(link_path, target_path)
+            }
+        }
+
+        return this.save_manifest(manifest)
+    },
+    remove(name: str.Str, manifest: package.PackageManifest) : lang.Result<bool, str.Str> {
+        if (manifest.dependencies.contains(name)) {
+            manifest.dependencies.remove(name)
+            this.save_manifest(manifest)
+            
+            let link_path = this.root_path / name
+            if (link_path.exists()) {
+                link_path.remove()
+            }
+            
+            // Prune unused packages
+            let source = resolve.DefaultPackageSource()
+            return this.prune(manifest, source)
+        } else {
+            return lang.Result<bool, str.Str>.err(str.format("Package {} not found in manifest", name))
+        }
+    },
+    init(name: str.Str) : lang.Result<bool, str.Str> {
+        let manifest = package.PackageManifest(
+            name,
+            "1.0.0",
+            "Unknown",
+            "",
+            "MIT",
+            hashMap.HashMap<str.Str, str.Str>()
+        )
+        let res = this.save_manifest(manifest)
+        if (res.is_err()) {
+            return res
+        }
+
+        let build_manifest = package.BuildManifest(1, 53, hashMap.HashMap<str.Str, package.BuildTarget>())
+        let binary_target = package.BuildTarget("binary", name, "src/main.hoshi", "", "universal", "universal", hashMap.HashMap<str.Str, str.Str>(), true)
+        build_manifest.targets.put("binary", binary_target)
+        
+        return this.save_build_manifest(build_manifest)
+    },
+    is_installed(name: str.Str, version: str.Str) : bool {
+        let pkg_dir = this.root_path / str.format("{}@{}", name, version)
+        return pkg_dir.exists() && pkg_dir.is_directory()
+    },
+    get_root_path() : fs.Path {
+        return this.root_path
+    },
+    build(manifest: package.PackageManifest, build_manifest: package.BuildManifest) : lang.Result<bool, str.Str> {
+        return this.build(manifest, build_manifest)
+    },
+    package(manifest: package.PackageManifest, build_manifest: package.BuildManifest) : lang.Result<bool, str.Str> {
+        return this.package(manifest, build_manifest)
+    }
+}
+
+struct GlobalPackageManager {
+    root_path: fs.Path,
+    constructor(),
+    build(manifest: package.PackageManifest, build_manifest: package.BuildManifest) : lang.Result<bool, str.Str>,
+    package(manifest: package.PackageManifest, build_manifest: package.BuildManifest) : lang.Result<bool, str.Str>
+}
+
+impl GlobalPackageManager {
+    constructor() {
+        this.root_path = fs.Path.home_dir() / ".pardo" / "packages"
+    }
+}
+
+impl GlobalPackageManager : instance.PackageManagementBackend {
+    install(manifest: package.PackageManifest, source: package.PackageSource) : lang.Result<bool, str.Str> {
+        let base = BasePackageManager(this.root_path)
+        base.ensure_modules_dir(this.root_path)
+        
+        let install_res = base.flatten_install(manifest, source)
+        if (install_res.is_err()) {
+            return install_res
+        }
+
+        let ctx = resolve.PackageResolveContext(source)
+        let res = resolve.solve_dependencies(manifest, ctx)
+        if (res != resolve.PackageResolveResult.Success) {
+            return lang.Result<bool, str.Str>.err("Dependency resolution failed")
+        }
+
+        let resolved_names = ctx.resolved_versions.keys()
+        for (let i = 0; i < resolved_names.length; i += 1) {
+            let name = resolved_names[i]
+            let ver = ctx.get_resolved_version(name)
+            let ver_str = str.Stringable(ver).to_string()
+            let sub_manifest_res = source.query_package_manifest(name, ver_str)
+            if (sub_manifest_res.is_err()) {
+                continue
+            }
+            base.flatten_install(sub_manifest_res.unwrap(), source)
+        }
+
+        return lang.Result<bool, str.Str>.ok(true)
+    },
+    remove(name: str.Str, manifest: package.PackageManifest) : lang.Result<bool, str.Str> {
+        let entries = this.root_path.listdir()
+        let removed_any = false
+        for (let i = 0; i < entries.length; i += 1) {
+            let entry = entries[i]
+            let filename = entry.filename()
+            if (filename == name || filename.startswith(name + "@")) {
+                if (entry.remove(true)) {
+                    removed_any = true
+                    console.print(str.format("Successfully removed global package entry {}\n", filename))
+                }
+            }
+        }
+        if (removed_any) {
+            return lang.Result<bool, str.Str>.ok(true)
+        } else {
+            return lang.Result<bool, str.Str>.err(str.format("Package {} not found in global storage", name))
+        }
+    },
+    init(name: str.Str) : lang.Result<bool, str.Str> {
+        return lang.Result<bool, str.Str>.err("init command is not supported for global package manager")
+    },
+    build(manifest: package.PackageManifest, build_manifest: package.BuildManifest) : lang.Result<bool, str.Str> {
+        return lang.Result<bool, str.Str>.err("build command is not supported for global package manager")
+    },
+    package(manifest: package.PackageManifest, build_manifest: package.BuildManifest) : lang.Result<bool, str.Str> {
+        return lang.Result<bool, str.Str>.err("package command is not supported for global package manager")
+    },
+    is_installed(name: str.Str, version: str.Str) : bool {
+        let pkg_dir = this.root_path / str.format("{}@{}", name, version)
+        return pkg_dir.exists() && pkg_dir.is_directory()
+    },
+    get_root_path() : fs.Path {
+        return this.root_path
+    }
+}

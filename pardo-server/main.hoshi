@@ -28,6 +28,7 @@ let public_routes = hashMap.HashMap<str.Str, str.Str>()
     .put("/v1/package/info", "full-match")
     .put("/v1/package/version/list", "full-match")
     .put("/v1/package/version/info", "full-match")
+    .put("/v1/artifact/list", "full-match")
     .put("/v1/artifact/download", "starts-with")
 
 func check_admin_status() : none {
