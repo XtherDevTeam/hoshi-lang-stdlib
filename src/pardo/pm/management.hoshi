@@ -196,22 +196,34 @@ impl ProjectLocalPackageManager {
         }
 
         // Platform/Arch detection
-        let platform = "universal"
-        let arch = "universal"
-        
-        let p_where = os.popen("hoshi_lang -w", "r")
-        if (p_where.is_ok()) {
-            let where_buffer = p_where.unwrap().read(1023)
-            where_buffer.data[where_buffer.size] = '\0'
-            let where_out = str.Str(where_buffer.data).trim()
-            p_where.unwrap().close()
-            if (where_out.find("darwin") != -1) {
-                platform = "darwin"
-            } elif (where_out.find("linux") != -1) {
-                platform = "linux"
-            } elif (where_out.find("windows") != -1) {
-                platform = "windows"
+        let platform : str.Str = "universal"
+        let arch : str.Str = "universal"
+
+        if (build_manifest.targets.size() != 0) {
+            // not empty we may adopt the platform and arch from the build manifest
+            // if all is universal, we may use the existing platform and arch
+            let universal = true
+            let targets = build_manifest.targets.keys()
+            for (let i = 0;i < targets.length;i += 1) {
+                let target = build_manifest.targets[targets[i]]
+                if (target.platform != "universal" || target.arch != "universal") {
+                    platform = target.platform
+                    arch = target.arch
+                    universal = false
+                    break
+                }
             }
+            if (universal) {
+                [[arch == "arm64"]] arch = "arm64"
+                [[arch == "amd64"]] arch = "amd64"
+                [[arch == "unknown"]] arch = "unknown"
+                [[platform == "darwin"]] platform = "darwin"
+                [[platform == "linux"]] platform = "linux"
+                [[platform == "windows"]] platform = "windows"
+                [[platform == "unknown"]] platform = "unknown"
+            }
+        } else {
+            // now is the pure source distribution case, can be safely marked as universal
         }
 
         let zip_name = str.format("{}-{}-{}.zip", manifest.name, platform, arch)

@@ -1,1 +1,8 @@
-{"license":"MIT","repository":"","author":"Unknown","name":"columbina","version":"1.0.0","dependencies":{}}
+{
+    "license": "MIT",
+    "repository": "",
+    "author": "Jerry Chou",
+    "name": "columbina",
+    "version": "1.0.0",
+    "dependencies": {}
+}

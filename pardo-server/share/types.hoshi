@@ -309,7 +309,9 @@ struct Artifact {
     filename: str.Str,
     mime: str.Str,
     destinations: str.Str,
-    constructor(package_id: int, unique_id: str.Str, version: str.Str, filename: str.Str, mime: str.Str, destinations: str.Str),
+    platform: str.Str,
+    arch: str.Str,
+    constructor(package_id: int, unique_id: str.Str, version: str.Str, filename: str.Str, mime: str.Str, destinations: str.Str, platform: str.Str, arch: str.Str),
     constructor(),
     set_id(id: int) : Artifact,
     set_package_id(package_id: int) : Artifact,
@@ -318,17 +320,21 @@ struct Artifact {
     set_filename(filename: str.Str) : Artifact,
     set_mime(mime: str.Str) : Artifact,
     set_destinations(destinations: str.Str) : Artifact,
+    set_platform(platform: str.Str) : Artifact,
+    set_arch(arch: str.Str) : Artifact,
     to_json(): json.JSONValue
 }
 
 impl Artifact {
-    constructor(package_id: int, unique_id: str.Str, version: str.Str, filename: str.Str, mime: str.Str, destinations: str.Str) {
+    constructor(package_id: int, unique_id: str.Str, version: str.Str, filename: str.Str, mime: str.Str, destinations: str.Str, platform: str.Str, arch: str.Str) {
         this.package_id = package_id
         this.unique_id = unique_id
         this.version = version
         this.filename = filename
         this.mime = mime
         this.destinations = destinations
+        this.platform = platform
+        this.arch = arch
         this.id = 0
     },
     constructor() {
@@ -362,6 +368,14 @@ impl Artifact {
         this.destinations = destinations
         return this
     },
+    set_platform(platform: str.Str) : Artifact {
+        this.platform = platform
+        return this
+    },
+    set_arch(arch: str.Str) : Artifact {
+        this.arch = arch
+        return this
+    },
     to_json() : json.JSONValue {
         return json.JSONDict()
             .put("id", json.Numeric(this.id))
@@ -371,5 +385,7 @@ impl Artifact {
             .put("filename", this.filename)
             .put("mime", this.mime)
             .put("destinations", this.destinations)
+            .put("platform", this.platform)
+            .put("arch", this.arch)
     }
 }

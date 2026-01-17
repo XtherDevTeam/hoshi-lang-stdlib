@@ -31,7 +31,9 @@ create table artifacts (
     version         string not null,
     filename        string not null,
     mime            string not null,
-    destinations    string not null
+    destinations    string not null,
+    platform        string not null default 'universal',
+    arch            string not null default 'universal'
 );
 
 create table package_versions (

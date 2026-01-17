@@ -682,14 +682,22 @@ func route_artifact_upload(req: kiana.request.Request, params: hashMap.HashMap<s
     let package_id = -1
     let version_tag = str.Str()
     let response = make_error_response("failed to upload")
+    let platform = str.Str("universal")
+    let arch = str.Str("universal")
 
-    req.form_data(func[package_id, version_tag, response, user, data_provider, pcontext](name: str.Str, reader: kiana.request.FormDataReader) : none {
+    req.form_data(func[package_id, version_tag, platform, arch, response, user, data_provider, pcontext](name: str.Str, reader: kiana.request.FormDataReader) : none {
         if (name == "package_id") {
             let buf = reader.read(reader.size())
             this.package_id := str.toInt(str.Str(buf.data))
         } elif (name == "version") {
             let buf = reader.read(reader.size())
             this.version_tag := str.Str(buf.data)
+        } elif (name == "platform") {
+            let buf = reader.read(reader.size())
+            this.platform := str.Str(buf.data)
+        } elif (name == "arch") {
+            let buf = reader.read(reader.size())
+            this.arch := str.Str(buf.data)
         } elif (name == "file") {
             if (this.package_id == -1 || this.version_tag == "") {
                 this.response := make_error_response("missing package_id or version before file part")
@@ -717,6 +725,11 @@ func route_artifact_upload(req: kiana.request.Request, params: hashMap.HashMap<s
                         mime = reader.headers["content-type"]
                     }
 
+                    if (filename.endswith(".zip") == false) {
+                        this.response := make_error_response("only zip files are allowed")
+                        return
+                    }
+
                     let seed = str.format("{}-{}", filename, runtime.runtime_random_legacy_unsigned())
                     let unique_id = crypto.hash.Hash.md5().feed(seed.data, seed.length).final().hexdigest()
 
@@ -724,7 +737,7 @@ func route_artifact_upload(req: kiana.request.Request, params: hashMap.HashMap<s
                     let dest_path = fs.Path(pcontext.config.artifacts_dir) / unique_id
                     reader.save_as(str.Stringable(dest_path).to_string())
 
-                    if (data_provider.add_artifact(this.package_id, unique_id, this.version_tag, filename, mime, str.Stringable(dest_path).to_string()) == dataProvider.ResultCode.Success) {
+                    if (data_provider.add_artifact(this.package_id, unique_id, this.version_tag, filename, mime, str.Stringable(dest_path).to_string(), this.platform, this.arch) == dataProvider.ResultCode.Success) {
                         this.response := kiana.response.Response(
                             http.HTTPResponseHeader("HTTP/1.1", 200, "OK"),
                             json.JSONDict()
@@ -892,19 +905,37 @@ func route_index_package_manifest(req: kiana.request.Request, params: hashMap.Ha
 func route_index_package_asset(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
     let name = params["name"]
     let version_tag = params["version"]
-    let artifact_filename = params["artifact"]
 
     let [pkg, pkg_err] = data_provider.get_package_by_name(name)
     if (pkg_err != null) { return make_error_response("not found") }
 
-    // Resolve version from artifact filename if possible, or search across all versions of this package
-    // resolve.hoshi uses: {version}-{platform}-{arch}.zip
-    // Let's try to find an artifact by filename for this package
-    
-    let query = data_provider.db.execute("select * from artifacts where package_id = ? and filename = ? and version = ?", pkg.id, artifact_filename, version_tag)
+    let artifact_param = params["artifact"]
+    let platform = str.Str("universal")
+    let arch = str.Str("universal")
+
+    // Pattern: <platform>-<arch>.zip
+    if (artifact_param.endswith(".zip")) {
+        let base = artifact_param.substring(0, artifact_param.length - 4)
+        let parts = base.split("-")
+        if (parts.length >= 2) {
+            platform = parts[0]
+            arch = parts[1]
+        }
+    }
+
+    let query = data_provider.db.execute("select * from artifacts where package_id = ? and version = ? and platform = ? and arch = ?", pkg.id, version_tag, platform, arch)
     if (query.is_err()) { return make_error_response("invalid query") }
     let [res, f_err] = query.unwrap().fetch_all()
-    if (f_err != null || res.length == 0) { return make_error_response("artifact not found") }
+    if (f_err != null || res.length == 0) { 
+        // fallback to universal-universal
+        query = data_provider.db.execute("select * from artifacts where package_id = ? and version = ? and platform = 'universal' and arch = 'universal'", pkg.id, version_tag)
+        if (query.is_err()) { return make_error_response("invalid query") }
+        let [res_fb, f_err_fb] = query.unwrap().fetch_all()
+        if (f_err_fb != null || res_fb.length == 0) {
+            return make_error_response("artifact not found") 
+        }
+        res = res_fb
+    }
     
     let artifact = dataProvider.DataProviderHelper.convert_row_to_artifact(res[0])
 
@@ -942,6 +973,10 @@ func main() : int {
     check_admin_status()
     
     pcontext.config = config
+    let artifact_path = fs.Path(pcontext.config.artifacts_dir)
+    if (artifact_path.exists() == false) {
+        artifact_path.mkdir()
+    }
     pcontext.logger.log("config loaded")
     application = kiana.application.Application(
         kiana.application.ApplicationConfig(config.host, config.port)

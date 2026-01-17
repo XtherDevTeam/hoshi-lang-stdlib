@@ -74,6 +74,8 @@ impl DataProviderHelper {
             .set_filename(dyn_cast<str.Str>(row["filename"]))
             .set_mime(dyn_cast<str.Str>(row["mime"]))
             .set_destinations(dyn_cast<str.Str>(row["destinations"]))
+            .set_platform(dyn_cast<str.Str>(row["platform"]))
+            .set_arch(dyn_cast<str.Str>(row["arch"]))
     }
 }
 
@@ -102,7 +104,7 @@ struct DataProvider {
     add_package_version(package_id: int, tag_name: str.Str, revision_notes: str.Str, artifacts: str.Str, dependencies: str.Str) : ResultCode,
     update_package_version(package_id: int, tag_name: str.Str, revision_notes: str.Str, artifacts: str.Str, dependencies: str.Str) : ResultCode,
     delete_package_version(package_id: int, tag_name: str.Str) : ResultCode,
-    add_artifact(package_id: int, unique_id: str.Str, version: str.Str, filename: str.Str, mime: str.Str, destinations: str.Str) : ResultCode,
+    add_artifact(package_id: int, unique_id: str.Str, version: str.Str, filename: str.Str, mime: str.Str, destinations: str.Str, platform: str.Str, arch: str.Str) : ResultCode,
     get_artifact_by_unique_id(unique_id: str.Str) : lang.Result<types.Artifact, ResultCode>,
     get_artifact_by_name(package_id: int, version: str.Str, filename: str.Str) : lang.Result<types.Artifact, ResultCode>,
     get_artifacts_by_package_version(package_id: int, version: str.Str) : lang.Result<vec.Vec<types.Artifact>, ResultCode>,
@@ -371,8 +373,8 @@ impl DataProvider {
         this.db.execute("delete from artifacts where package_id = ? and version = ?", package_id, tag_name)
         return ResultCode.Success
     },
-    add_artifact(package_id: int, unique_id: str.Str, version: str.Str, filename: str.Str, mime: str.Str, destinations: str.Str) : ResultCode {
-        let query = this.db.execute("insert into artifacts (package_id, unique_id, version, filename, mime, destinations) values (?, ?, ?, ?, ?, ?)", package_id, unique_id, version, filename, mime, destinations)
+    add_artifact(package_id: int, unique_id: str.Str, version: str.Str, filename: str.Str, mime: str.Str, destinations: str.Str, platform: str.Str, arch: str.Str) : ResultCode {
+        let query = this.db.execute("insert into artifacts (package_id, unique_id, version, filename, mime, destinations, platform, arch) values (?, ?, ?, ?, ?, ?, ?, ?)", package_id, unique_id, version, filename, mime, destinations, platform, arch)
         if (query.is_err()) {
             return ResultCode.InvalidQuery
         }
