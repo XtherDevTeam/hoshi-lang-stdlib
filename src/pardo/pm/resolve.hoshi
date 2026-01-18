@@ -22,7 +22,7 @@ impl DefaultPackageSource {
     },
     constructor() {
         this.name = "default"
-        this.remote = "https://www.xiaokang00010.top:62112/index"
+        this.remote = "https://www.xiaokang00010.top:62112/api/index"
     },
     set_remote(remote: str.Str) : DefaultPackageSource {
         this.remote = remote
