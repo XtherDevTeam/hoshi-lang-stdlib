@@ -12,13 +12,16 @@ use os "os"
 use zip "zip"
 use net "net"
 use runtime "runtime"
+use github "pardo/install/github"
 
 struct BasePackageManager {
     root_path: fs.Path,
     constructor(root_path: fs.Path),
     ensure_modules_dir(path: fs.Path) : bool,
     flatten_install(manifest: package.PackageManifest, source: package.PackageSource) : lang.Result<bool, str.Str>,
-    create_symlink(link: fs.Path, target: fs.Path) : bool
+    create_symlink(link: fs.Path, target: fs.Path) : bool,
+    link_exposed_binaries(pkg_path: fs.Path, target_bin_dir: fs.Path) : lang.Result<bool, str.Str>,
+    unlink_exposed_binaries(pkg_path: fs.Path, target_bin_dir: fs.Path) : lang.Result<bool, str.Str>
 }
 
 impl BasePackageManager {
@@ -143,6 +146,84 @@ impl BasePackageManager {
         temp_zip.remove()
 
         return lang.Result<bool, str.Str>.ok(true)
+    },
+    link_exposed_binaries(pkg_path: fs.Path, target_bin_dir: fs.Path) : lang.Result<bool, str.Str> {
+        let exposed_binaries_path = pkg_path / "exposed_binaries.json"
+        if (exposed_binaries_path.exists() == false) {
+            return lang.Result<bool, str.Str>.ok(true)
+        }
+
+        let f_res = fs.open(exposed_binaries_path.to_string(), "r")
+        if (f_res.is_err()) {
+            return lang.Result<bool, str.Str>.err("Failed to open exposed_binaries.json")
+        }
+        let f = f_res.unwrap()
+        let data = f.read(f.size())
+        f.close()
+
+        let json_res = json.parse(str.Str(data.data))
+        if (json_res.is_err()) {
+            return lang.Result<bool, str.Str>.err("Failed to parse exposed_binaries.json")
+        }
+
+        let exposed_map = dyn_cast<json.JSONDict>(json_res.unwrap())
+        if (exposed_map == null) {
+            return lang.Result<bool, str.Str>.err("exposed_binaries.json must be a JSON object")
+        }
+
+        this.ensure_modules_dir(target_bin_dir)
+
+        let keys = exposed_map.keys()
+        for (let i = 0; i < keys.length; i += 1) {
+            let bin_name = keys[i]
+            let rel_path = dyn_cast<str.Str>(exposed_map[bin_name])
+            if (rel_path != null) {
+                let target_path = pkg_path / rel_path
+                let link_path = target_bin_dir / bin_name
+                
+                if (target_path.exists()) {
+                    // console.print(str.format("Linking binary {} to {}\n", bin_name, link_path.to_string()))
+                    this.create_symlink(link_path, target_path)
+                    
+                    // Make sure the target is executable
+                    os.chmod(target_path.to_string(), 493) // 0755
+                } else {
+                    console.print(str.format("Warning: Exposed binary target {} not found at {}\n", bin_name, target_path.to_string()))
+                }
+            }
+        }
+
+        return lang.Result<bool, str.Str>.ok(true)
+    },
+    unlink_exposed_binaries(pkg_path: fs.Path, target_bin_dir: fs.Path) : lang.Result<bool, str.Str> {
+        let exposed_binaries_path = pkg_path / "exposed_binaries.json"
+        
+        let f_res = fs.open(exposed_binaries_path.to_string(), "r")
+        if (f_res.is_err()) {
+            return lang.Result<bool, str.Str>.ok(true)
+        }
+        let f = f_res.unwrap()
+        let data = f.read(f.size())
+        f.close()
+
+        let json_res = json.parse(str.Str(data.data))
+        if (json_res.is_err()) {
+            return lang.Result<bool, str.Str>.err("Failed to parse exposed_binaries.json")
+        }
+
+        let exposed_map = dyn_cast<json.JSONDict>(json_res.unwrap())
+        if (exposed_map == null) {
+            return lang.Result<bool, str.Str>.err("exposed_binaries.json must be a JSON object")
+        }
+
+        let keys = exposed_map.keys()
+        for (let i = 0; i < keys.length; i += 1) {
+            let bin_name = keys[i]
+            let link_path = target_bin_dir / bin_name
+            link_path.remove()
+        }
+
+        return lang.Result<bool, str.Str>.ok(true)
     }
 }
 
@@ -211,6 +292,16 @@ impl ProjectLocalPackageManager {
             let filename = entry.filename()
             if (required_dirs.contains(filename) == false) {
                 console.print(str.format("Pruning unused package entry: {}\n", filename))
+                
+                // Unlink binaries before removing directory
+                let pkg_path = this.root_path / filename
+                let project_bin_dir = fs.Path.current_dir() / "bin"
+                let base = BasePackageManager(this.root_path)
+                let unlink_res = base.unlink_exposed_binaries(pkg_path, project_bin_dir)
+                if (unlink_res.is_err()) {
+                    console.print(str.format("Warning: Failed to unlink binaries for {}: {}\n", filename, unlink_res.unwrap_err()))
+                }
+                
                 entry.remove(true)
             }
         }
@@ -317,11 +408,33 @@ impl ProjectLocalPackageManager {
             // now is the pure source distribution case, can be safely marked as universal
         }
 
+        // Collect visible targets for exposed_binaries.json
+        let exposed_binaries = json.JSONDict()
+        let target_names = build_manifest.targets.keys()
+        let has_exposed = false
+        for (let i = 0; i < target_names.length; i += 1) {
+            let name = target_names[i]
+            let target = build_manifest.targets[name]
+            if (target.visible) {
+                exposed_binaries.put(name, str.format("bin/{}", target.filename))
+                has_exposed = true
+            }
+        }
+
+        if (has_exposed) {
+            let eb_file = fs.open("exposed_binaries.json", "w")
+            if (eb_file.is_ok()) {
+                eb_file.unwrap().write(json.JSONValue(exposed_binaries).to_string().data)
+                eb_file.unwrap().close()
+            }
+        }
+
         let zip_name = str.format("{}-{}-{}.zip", manifest.name, platform, arch)
         console.print(str.format("Creating package artifact: {}\n", zip_name))
         
         let z_res = zip.open(zip_name, zip.CompressionLevel.Default, 'w')
         if (z_res.is_err()) {
+            if (has_exposed) { fs.Path("exposed_binaries.json").remove() }
             return lang.Result<bool, str.Str>.err("Failed to create zip file: " + z_res.unwrap_err())
         }
         let z_file = z_res.unwrap()
@@ -330,6 +443,11 @@ impl ProjectLocalPackageManager {
         this.recursive_zip(z_file, project_root, project_root, zip_name)
         
         z_file.close()
+
+        if (has_exposed) {
+            fs.Path("exposed_binaries.json").remove()
+        }
+
         return lang.Result<bool, str.Str>.ok(true)
     },
     recursive_zip(z_file: zip.ZipFile, current_path: fs.Path, root_path: fs.Path, zip_name: str.Str) : bool {
@@ -411,7 +529,7 @@ impl ProjectLocalPackageManager : instance.PackageManagementBackend {
 
             let pkg_modules_dir = this.root_path / str.format("{}@{}", name, ver_str) / ".pardo_modules"
             base.ensure_modules_dir(pkg_modules_dir)
-            
+
             let deps_keys = sub_manifest.dependencies.keys()
             for (let j = 0; j < deps_keys.length; j += 1) {
                 let dep_name = deps_keys[j]
@@ -434,6 +552,10 @@ impl ProjectLocalPackageManager : instance.PackageManagementBackend {
                 let link_path = this.root_path / name
                 let target_path = this.root_path / str.format("{}@{}", name, ver_str)
                 base.create_symlink(link_path, target_path)
+
+                // Link exposed binaries for direct dependencies to project bin dir
+                let project_bin_dir = fs.Path.current_dir() / "bin"
+                base.link_exposed_binaries(target_path, project_bin_dir)
             }
         }
 
@@ -445,9 +567,7 @@ impl ProjectLocalPackageManager : instance.PackageManagementBackend {
             this.save_manifest(manifest)
             
             let link_path = this.root_path / name
-            if (link_path.exists()) {
-                link_path.remove()
-            }
+            runtime.runtime_fs_remove(link_path.to_string().c_str())
             
             // Prune unused packages
             let source = resolve.DefaultPackageSource()
@@ -500,7 +620,12 @@ struct GlobalPackageManager {
 
 impl GlobalPackageManager {
     constructor() {
-        this.root_path = fs.Path.home_dir() / ".pardo" / "packages"
+        let hoshi_home = github.detect_existing_hoshi_installation()
+        if (hoshi_home != "") {
+            this.root_path = fs.Path(hoshi_home) / "packages"
+        } else {
+            this.root_path = fs.Path.home_dir() / ".pardo" / "packages"
+        }
     }
 }
 
@@ -527,6 +652,25 @@ impl GlobalPackageManager : instance.PackageManagementBackend {
             base.flatten_install(sub_manifest_res.unwrap(), source)
         }
 
+        // Link exposed binaries only for explicitly requested global packages
+        let direct_deps = manifest.dependencies.keys()
+        for (let i = 0; i < direct_deps.length; i += 1) {
+            let name = direct_deps[i]
+            let ver = ctx.get_resolved_version(name)
+            if (ver != null) {
+                let ver_str = str.Stringable(ver).to_string()
+                let pkg_path = this.root_path / str.format("{}@{}", name, ver_str)
+                let hoshi_home = github.detect_existing_hoshi_installation()
+                let global_bin_dir : fs.Path = null
+                if (hoshi_home != "") {
+                    global_bin_dir = fs.Path(hoshi_home) / "bin"
+                } else {
+                    global_bin_dir = fs.Path.home_dir() / ".pardo" / "bin"
+                }
+                base.link_exposed_binaries(pkg_path, global_bin_dir)
+            }
+        }
+
         return lang.Result<bool, str.Str>.ok(true)
     },
     remove(name: str.Str, manifest: package.PackageManifest) : lang.Result<bool, str.Str> {
@@ -536,6 +680,22 @@ impl GlobalPackageManager : instance.PackageManagementBackend {
             let entry = entries[i]
             let filename = entry.filename()
             if (filename == name || filename.startswith(name + "@")) {
+                // Unlink binaries before removing directory
+                let hoshi_home = github.detect_existing_hoshi_installation()
+                let global_bin_dir : fs.Path = null
+                if (hoshi_home != "") {
+                    global_bin_dir = fs.Path(hoshi_home) / "bin"
+                } else {
+                    global_bin_dir = fs.Path.home_dir() / ".pardo" / "bin"
+                }
+                
+                let pkg_path = this.root_path / filename
+                let base = BasePackageManager(this.root_path)
+                let unlink_res = base.unlink_exposed_binaries(pkg_path, global_bin_dir)
+                if (unlink_res.is_err()) {
+                    console.print(str.format("Warning: Failed to unlink global binaries for {}: {}\n", filename, unlink_res.unwrap_err()))
+                }
+
                 if (entry.remove(true)) {
                     removed_any = true
                     console.print(str.format("Successfully removed global package entry {}\n", filename))

@@ -270,6 +270,9 @@ func main() : int {
             let manifest_res = load_pardo_manifest()
             if (manifest_res.is_ok()) {
                 manifest = manifest_res.unwrap()
+            } else {
+                console.print("Error: unable to load pardo.json\n")
+                return 1
             }
         }
         

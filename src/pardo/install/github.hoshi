@@ -189,17 +189,26 @@ func extract_release(src_file: str.Str, dest_dir: str.Str) : ResultCode {
 }
 
 func detect_existing_hoshi_installation() : str.Str {
+    let result_str : str.Str = ""
     if (os.environ.contains("HOSHI_HOME")) {
-        return os.environ["HOSHI_HOME"]
+        result_str = os.environ["HOSHI_HOME"]
     } else {
         let process = os.popen("hoshi_lang -w", "r")
         if (process.is_err()) {
             return ""
         }
         let buffer = process.unwrap().read(2048)
-        let result_str = str.Str(buffer.data)
-        return result_str
+        result_str = str.Str(buffer.data).trim()
     }
+    
+    // Strip /bin or /bin/ from the end if present
+    if (result_str.endswith("/bin")) {
+        return result_str.substring(0, result_str.length - 4)
+    } elif (result_str.endswith("/bin/")) {
+         return result_str.substring(0, result_str.length - 5)
+    }
+    
+    return result_str
 }
 
 enum ShellEnvironmentType {

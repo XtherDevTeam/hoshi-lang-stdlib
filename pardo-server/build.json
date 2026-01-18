@@ -1,0 +1,16 @@
+{
+    "targets": {
+        "binary": {
+            "flags": "",
+            "filename": "pardo-server",
+            "arch": "universal",
+            "sourcefile": "main.hoshi",
+            "defines": {},
+            "visible": true,
+            "platform": "universal",
+            "type": "binary"
+        }
+    },
+    "minimum_hoshi_build": 60,
+    "minimum_pm_version": 1
+}

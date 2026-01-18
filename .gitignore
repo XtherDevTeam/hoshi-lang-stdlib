@@ -9,3 +9,4 @@ pardo-server/pardo-server*
 !pardo-server/blob/artifacts/.gitkeep
 pardo-server/blob/artifacts/*
 .pardo_modules
+bin
