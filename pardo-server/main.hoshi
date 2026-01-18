@@ -30,6 +30,7 @@ let public_routes = hashMap.HashMap<str.Str, str.Str>()
     .put("/v1/package/version/info", "full-match")
     .put("/v1/artifact/list", "full-match")
     .put("/v1/artifact/download", "starts-with")
+    .put("/v1/user/register", "full-match")
 
 func check_admin_status() : none {
     let [_, err] = data_provider.get_user_by_username("jerry_chou")
@@ -194,6 +195,36 @@ func route_admin_add_user(req: kiana.request.Request, params: hashMap.HashMap<st
     if (data_provider.add_user(username, password) != dataProvider.ResultCode.Success) {
         return make_error_response("failed to add user")
     }
+    return kiana.response.Response(
+        http.HTTPResponseHeader("HTTP/1.1", 200, "OK"),
+        json.JSONDict()
+            .put("status", str.Str("ok")) as json.JSONValue
+    )
+}
+
+// /v1/user/register
+func route_user_register(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
+    let [body_json, err] = req.json()
+    if (err != null) {
+        return make_error_response("invalid request: error parsing json")
+    }
+    let body = dyn_cast<json.JSONDict>(body_json)
+    if (body.contains("username") == false || body.contains("password") == false) {
+        return make_error_response("invalid request: missing username or password")
+    }
+    let username = dyn_cast<str.Str>(body["username"])
+    let password = dyn_cast<str.Str>(body["password"])
+
+    // Check if user already exists
+    let [existing_user, find_err] = data_provider.get_user_by_username(username)
+    if (find_err == null) {
+        return make_error_response("user already exists")
+    }
+
+    if (data_provider.add_user(username, password) != dataProvider.ResultCode.Success) {
+        return make_error_response("failed to register user")
+    }
+
     return kiana.response.Response(
         http.HTTPResponseHeader("HTTP/1.1", 200, "OK"),
         json.JSONDict()
@@ -988,6 +1019,7 @@ func main() : int {
     application.use_route("/v1/admin/config/update", func route_admin_set_config)
     application.use_route("/v1/admin/config/get", func route_admin_get_config)
     application.use_route("/v1/user/login", func route_login)
+    application.use_route("/v1/user/register", func route_user_register)
     application.use_route("/v1/user/logout", func route_logout)
     application.use_route("/v1/user/info", func route_user_info)
     application.use_route("/v1/package/list", func route_package_list)
