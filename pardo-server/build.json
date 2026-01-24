@@ -1,11 +1,13 @@
 {
     "targets": {
-        "binary": {
-            "flags": "",
+        "pardo-server": {
+            "flags": "--build-mode release",
             "filename": "pardo-server",
             "arch": "universal",
             "sourcefile": "main.hoshi",
-            "defines": {},
+            "defines": {
+                "COLUMBINA": "1"
+            },
             "visible": true,
             "platform": "universal",
             "type": "binary"

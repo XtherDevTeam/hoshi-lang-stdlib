@@ -11,7 +11,9 @@ create table users (
     password_salted string not null,
     email           string not null default '',
     description     string not null default '',
-    permission      integer not null default 1
+    permission      integer not null default 1,
+    avatar_path     string not null default 'template/default_avatar.jpg',
+    avatar_mime     string not null default 'image/jpeg'
 );
 
 create table packages (

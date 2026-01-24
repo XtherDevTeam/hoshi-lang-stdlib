@@ -26,11 +26,14 @@ let public_routes = hashMap.HashMap<str.Str, str.Str>()
     .put("/v1/user/login", "full-match")
     .put("/v1/package/list", "full-match")
     .put("/v1/package/info", "full-match")
+    .put("/v1/package/search", "full-match")
     .put("/v1/package/version/list", "full-match")
     .put("/v1/package/version/info", "full-match")
     .put("/v1/artifact/list", "full-match")
     .put("/v1/artifact/download", "starts-with")
     .put("/v1/user/register", "full-match")
+    .put("/v1/user/search", "full-match")
+    .put("/v1/user/profile", "starts-with")
 
 func check_admin_status() : none {
     let [_, err] = data_provider.get_user_by_username("jerry_chou")
@@ -839,6 +842,250 @@ func route_artifact_list(req: kiana.request.Request, params: hashMap.HashMap<str
     )
 }
 
+// /v1/user/search
+func route_user_search(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
+    let [body_json, err] = req.json()
+    if (err != null) { return make_error_response("invalid request: error parsing json") }
+    let body = dyn_cast<json.JSONDict>(body_json)
+
+    let query_cond = types.UserQueryCondition()
+    let range_cond = types.GeneralRangeCondition()
+
+    if (body.contains("query")) {
+        let q = dyn_cast<json.JSONDict>(body["query"])
+        if (q.contains("username")) {
+            query_cond.set_username_like(dyn_cast<str.Str>(q["username"]))
+        }
+        if (q.contains("email")) {
+            query_cond.set_email_like(dyn_cast<str.Str>(q["email"]))
+        }
+    }
+
+    if (body.contains("range")) {
+        let r = dyn_cast<json.JSONDict>(body["range"])
+        if (r.contains("page_size")) {
+            let ps = dyn_cast<json.Numeric>(r["page_size"])
+            range_cond.set_page_size(ps.getInt())
+        } else {
+            range_cond.set_page_size(10)
+        }
+        if (r.contains("page_offset")) {
+            let po = dyn_cast<json.Numeric>(r["page_offset"])
+            range_cond.set_page_offset(po.getInt())
+        } else {
+            range_cond.set_page_offset(0)
+        }
+    }
+
+    let [users, u_err] = data_provider.search_users(query_cond, range_cond)
+    if (u_err != null) {
+        return make_error_response("search failed")
+    }
+
+    let list = json.JSONList()
+    for (let i = 0; i < users.length; i += 1) {
+        let u = users[i]
+        // RETURN SAFE PUBLIC INFO ONLY
+        list.push(json.JSONDict()
+            .put("id", json.Numeric(u.id))
+            .put("username", u.username)
+            .put("description", u.description)
+            .put("permission", json.Numeric(u.permission)) as json.JSONValue
+        )
+    }
+
+    return kiana.response.Response(
+        http.HTTPResponseHeader("HTTP/1.1", 200, "OK"),
+        json.JSONDict()
+            .put("status", str.Str("ok"))
+            .put("data", list) as json.JSONValue
+    )
+}
+
+// /v1/package/search
+func route_package_search(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
+    let [body_json, err] = req.json()
+    if (err != null) { return make_error_response("invalid request: error parsing json") }
+    let body = dyn_cast<json.JSONDict>(body_json)
+
+    let query_cond = types.PackageQueryCondition()
+    let range_cond = types.GeneralRangeCondition()
+
+    if (body.contains("query")) {
+        let q = dyn_cast<json.JSONDict>(body["query"])
+        if (q.contains("name")) {
+            query_cond.set_name_like(dyn_cast<str.Str>(q["name"]))
+        }
+        if (q.contains("description")) {
+            query_cond.set_description_like(dyn_cast<str.Str>(q["description"]))
+        }
+        if (q.contains("author_id")) {
+             let aid = dyn_cast<json.Numeric>(q["author_id"])
+             query_cond.set_author_id(aid.getInt())
+        }
+    }
+
+    if (body.contains("range")) {
+        let r = dyn_cast<json.JSONDict>(body["range"])
+        if (r.contains("page_size")) {
+            let ps = dyn_cast<json.Numeric>(r["page_size"])
+            range_cond.set_page_size(ps.getInt())
+        } else {
+            range_cond.set_page_size(10)
+        }
+        if (r.contains("page_offset")) {
+            let po = dyn_cast<json.Numeric>(r["page_offset"])
+            range_cond.set_page_offset(po.getInt())
+        } else {
+            range_cond.set_page_offset(0)
+        }
+    }
+
+    let [packages, p_err] = data_provider.search_packages(query_cond, range_cond)
+    if (p_err != null) {
+        return make_error_response("search failed")
+    }
+
+    let list = json.JSONList()
+    for (let i = 0; i < packages.length; i += 1) {
+        let pkg = packages[i]
+        list.push(pkg.to_json())
+    }
+
+    return kiana.response.Response(
+        http.HTTPResponseHeader("HTTP/1.1", 200, "OK"),
+        json.JSONDict()
+            .put("status", str.Str("ok"))
+            .put("data", list) as json.JSONValue
+    )
+}
+
+// /v1/user/avatar/:id
+func route_user_avatar_get(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
+    if (params.contains("id") == false) {
+        return make_error_response("missing user id")
+    }
+    let id_str = params["id"]
+    let id = str.toInt(id_str)
+    
+    let [user, err] = data_provider.get_user_by_id(id)
+    if (err != null) {
+        return make_error_response("user not found")
+    }
+
+    let [f, f_err] = fs.open(user.avatar_path, "rb")
+    if (f_err != null) {
+        // Fallback to default if custom avatar missing
+        let [f_def, f_def_err] = fs.open("template/default_avatar.jpg", "rb")
+        if (f_def_err != null) {
+             return make_error_response("avatar not found")
+        }
+        f = f_def
+    }
+
+    // Determine filename for download, purely cosmetic here
+    let filename = "avatar.jpg"
+    if (user.avatar_mime == "image/png") { filename = "avatar.png" }
+    elif (user.avatar_mime == "image/gif") { filename = "avatar.gif" }
+
+    return kiana.response.Response(
+        http.HTTPResponseHeader("HTTP/1.1", 200, "OK")
+            .add_header("Content-Type", user.avatar_mime)
+            .add_header("Content-Disposition", str.format("inline; filename=\"{}\"", filename)),
+        f as file.AbstractFile
+    )
+}
+
+// /v1/user/avatar/upload
+func route_user_avatar_upload(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
+    let [user_id, id_err] = get_current_user_id(req)
+    if (id_err != null) { return make_error_response("not authenticated") }
+    let [user, u_err] = data_provider.get_user_by_id(user_id)
+    if (u_err != null) { return make_error_response("user not found") }
+
+    let response = make_error_response("failed to upload")
+    
+    req.form_data(func[response, user, data_provider, pcontext](name: str.Str, reader: kiana.request.FormDataReader) : none {
+        if (name == "file") {
+            let cd = reader.headers["content-disposition"]
+            let filename_index = cd.find("filename=\"")
+            if (filename_index != -1) {
+                let filename_end = cd.find("\"", filename_index + 10)
+                if (filename_end != -1) {
+                    let filename = cd.substring(filename_index + 10, filename_end)
+                    let mime : str.Str = "image/jpeg"
+                    if (reader.headers.contains("content-type")) {
+                        mime = reader.headers["content-type"]
+                    }
+
+                    // Basic validation for image types
+                    if (mime.startswith("image/") == false) {
+                        this.response := make_error_response("only image files are allowed")
+                        return
+                    }
+
+                    let seed = str.format("{}-{}-avatar", filename, runtime.runtime_random_legacy_unsigned())
+                    let unique_id = crypto.hash.Hash.md5().feed(seed.data, seed.length).final().hexdigest()
+                    
+                    let ext = ".jpg"
+                    if (mime == "image/png") { ext = ".png" }
+                    elif (mime == "image/gif") { ext = ".gif" }
+                    // ... other types mapped effectively or just use detected mime for serving
+
+                    let dest_path = fs.Path(pcontext.config.artifacts_dir) / "avatars" / (unique_id + ext)
+                    
+                    // Create avatars dir if not exists
+                    let avatar_dir = fs.Path(pcontext.config.artifacts_dir) / "avatars"
+                    if (avatar_dir.exists() == false) {
+                        avatar_dir.mkdir()
+                    }
+
+                    reader.save_as(str.Stringable(dest_path).to_string())
+
+                    if (data_provider.update_user_avatar(this.user.id, str.Stringable(dest_path).to_string(), mime) == dataProvider.ResultCode.Success) {
+                        this.response := kiana.response.Response(
+                            http.HTTPResponseHeader("HTTP/1.1", 200, "OK"),
+                            json.JSONDict()
+                                .put("status", str.Str("ok"))
+                                .put("avatar_path", str.format("/v1/user/avatar/{}", this.user.id)) as json.JSONValue
+                        )
+                    } else {
+                        this.response := make_error_response("failed to update user avatar in database")
+                    }
+                }
+            }
+        }
+    })
+
+    return response
+}
+
+// /v1/user/profile/:id
+func route_user_public_profile(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
+    if (params.contains("id") == false) {
+        return make_error_response("missing user id")
+    }
+    let id_str = params["id"]
+    let id = str.toInt(id_str)
+    
+    let [user, err] = data_provider.get_user_by_id(id)
+    if (err != null) {
+        return make_error_response("user not found")
+    }
+
+    // Return safe public info only
+    return kiana.response.Response(
+        http.HTTPResponseHeader("HTTP/1.1", 200, "OK"),
+        json.JSONDict()
+            .put("status", str.Str("ok"))
+            .put("data", json.JSONDict()
+                .put("id", json.Numeric(user.id))
+                .put("username", user.username)
+                .put("description", user.description)
+            ) as json.JSONValue
+    )
+}
+
 // /v1/artifact/remove
 func route_artifact_remove(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
     let [user_id, id_err] = get_current_user_id(req)
@@ -1036,6 +1283,13 @@ func main() : int {
     application.use_route("/v1/artifact/download/:id", func route_artifact_download)
     application.use_route("/v1/artifact/list", func route_artifact_list)
     application.use_route("/v1/artifact/remove", func route_artifact_remove)
+    application.use_route("/v1/user/search", func route_user_search)
+    application.use_route("/v1/package/search", func route_package_search)
+    application.use_route("/v1/user/profile/:id", func route_user_public_profile)
+    application.use_route("/v1/user/avatar/upload", func route_user_avatar_upload)
+    application.use_route("/v1/user/avatar/:id", func route_user_avatar_get)
+
+
     application.use_route("/index/packages/:name/index", func route_index_package_info)
     application.use_route("/index/packages/:name/manifest/:version", func route_index_package_manifest)
     application.use_route("/index/packages/:name/:version/:artifact", func route_index_package_asset)

@@ -96,7 +96,9 @@ struct User {
     description: str.Str,
     email: str.Str,
     permission: int,
-    constructor(username: str.Str, password_salted: str.Str, description: str.Str, email: str.Str, permission: int),
+    avatar_path: str.Str,
+    avatar_mime: str.Str,
+    constructor(username: str.Str, password_salted: str.Str, description: str.Str, email: str.Str, permission: int, avatar_path: str.Str, avatar_mime: str.Str),
     constructor(),
     set_id(id: int) : User,
     set_username(username: str.Str) : User,
@@ -104,6 +106,8 @@ struct User {
     set_description(description: str.Str) : User,
     set_email(email: str.Str) : User,
     set_permission(permission: int) : User,
+    set_avatar_path(avatar_path: str.Str) : User,
+    set_avatar_mime(avatar_mime: str.Str) : User,
     to_json(): json.JSONValue
 }
 
@@ -256,12 +260,14 @@ impl PackageInformation {
 }
 
 impl User {
-    constructor(username: str.Str, password_salted: str.Str, description: str.Str, email: str.Str, permission: int) {
+    constructor(username: str.Str, password_salted: str.Str, description: str.Str, email: str.Str, permission: int, avatar_path: str.Str, avatar_mime: str.Str) {
         this.username = username
         this.password_salted = password_salted
         this.description = description
         this.email = email
         this.permission = permission
+        this.avatar_path = avatar_path
+        this.avatar_mime = avatar_mime
     },
     constructor() {
         return this
@@ -288,6 +294,14 @@ impl User {
     },
     set_permission(permission: int) : User {
         this.permission = permission
+        return this
+    },
+    set_avatar_path(avatar_path: str.Str) : User {
+        this.avatar_path = avatar_path
+        return this
+    },
+    set_avatar_mime(avatar_mime: str.Str) : User {
+        this.avatar_mime = avatar_mime
         return this
     },
     to_json() : str.Str {
@@ -389,3 +403,132 @@ impl Artifact {
             .put("arch", this.arch)
     }
 }
+
+struct GeneralRangeCondition {
+    page_size: int,
+    page_offset: int,
+    constructor(page_size: int, page_offset: int),
+    constructor(),
+    set_page_size(page_size: int) : GeneralRangeCondition,
+    set_page_offset(page_offset: int) : GeneralRangeCondition,
+    has_page_size(): bool,
+    has_page_offset(): bool
+}
+
+impl GeneralRangeCondition {
+    constructor(page_size: int, page_offset: int) {
+        this.page_size = page_size
+        this.page_offset = page_offset
+    },
+    constructor() {
+        return this
+    },
+    set_page_size(page_size: int) : GeneralRangeCondition {
+        this.page_size = page_size
+        return this
+    },
+    set_page_offset(page_offset: int) : GeneralRangeCondition {
+        this.page_offset = page_offset
+        return this
+    },
+    has_page_size(): bool {
+        return this.page_size != null
+    },
+    has_page_offset(): bool {
+        return this.page_offset != null
+    }
+}
+
+struct UserQueryCondition {
+    username_like: str.Str,
+    email_like: str.Str,
+    permission: int,
+    constructor(username_like: str.Str, email_like: str.Str, permission: int),
+    constructor(),
+    set_username_like(username_like: str.Str) : UserQueryCondition,
+    set_email_like(email_like: str.Str) : UserQueryCondition,
+    set_permission(permission: int) : UserQueryCondition,
+    has_username_like(): bool,
+    has_email_like(): bool,
+    has_permission(): bool
+}
+
+impl UserQueryCondition {
+    constructor(username_like: str.Str, email_like: str.Str, permission: int) {
+        this.username_like = username_like
+        this.email_like = email_like
+        this.permission = permission
+    },
+    constructor() {
+        return this
+    },
+    set_username_like(username_like: str.Str) : UserQueryCondition {
+        this.username_like = username_like
+        return this
+    },
+    set_email_like(email_like: str.Str) : UserQueryCondition {
+        this.email_like = email_like
+        return this
+    },
+    set_permission(permission: int) : UserQueryCondition {
+        this.permission = permission
+        return this
+    },
+    has_username_like(): bool {
+        return this.username_like != null
+    },
+    has_email_like(): bool {
+        return this.email_like != null
+    },
+    has_permission(): bool {
+        return this.permission != null
+    }
+}
+
+struct PackageQueryCondition {
+    name_like: str.Str,
+    description_like: str.Str,
+    author_id: int,
+    constructor(name_like: str.Str, description_like: str.Str, author_id: int),
+    constructor(),
+    set_name_like(name_like: str.Str) : PackageQueryCondition,
+    set_description_like(description_like: str.Str) : PackageQueryCondition,
+    set_author_id(author_id: int) : PackageQueryCondition,
+    has_name_like(): bool,
+    has_description_like(): bool,
+    has_author_id(): bool
+}
+
+impl PackageQueryCondition {
+    constructor(name_like: str.Str, description_like: str.Str, author_id: int) {
+        this.name_like = name_like
+        this.description_like = description_like
+        this.author_id = author_id
+    },
+    constructor() {
+        return this
+    },
+    set_name_like(name_like: str.Str) : PackageQueryCondition {
+        this.name_like = name_like
+        return this
+    },
+    set_description_like(description_like: str.Str) : PackageQueryCondition {
+        this.description_like = description_like
+        return this
+    },
+    set_author_id(author_id: int) : PackageQueryCondition {
+        this.author_id = author_id
+        return this
+    },
+    has_name_like(): bool {
+        return this.name_like != null
+    },
+    has_description_like(): bool {
+        return this.description_like != null
+    },
+    has_author_id(): bool {
+        return this.author_id != null
+    }
+}
+
+

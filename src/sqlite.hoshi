@@ -217,6 +217,7 @@ struct Database {
     commit() : lang.Result<bool, ResultCode>,
     rollback() : lang.Result<bool, ResultCode>,
     execute(sql: str.Str, params: ...SQLBindable) : lang.Result<Statement, ResultCode>,
+    execute(sql: str.Str, params: vec.Vec<SQLBindable>) : lang.Result<Statement, ResultCode>,
     execute_batch(sql: str.Str) : lang.Result<bool, ResultCode>,
     error_message() : str.Str,
     constructor(handle: unsigned),
@@ -255,6 +256,23 @@ impl Database {
         return lang.Result<bool, ResultCode>.ok(true)
     },
     execute(sql: str.Str, params: ...SQLBindable) : lang.Result<Statement, ResultCode> {
+        let pStmt = unsigned[1](0)
+        let rc = sqlite3_prepare_v2(this.handle, sql.c_str(), -1, runtime.runtime_get_string_array_data_pointer(pStmt), 0)
+        if (rc != ResultCode.SQLITE_OK) {
+            return lang.Result<Statement, ResultCode>.err(rc)
+        }
+        let stmt = Statement(this.handle, pStmt[0])
+        for (let i = 0;i < params.length;i += 1) {
+            params[i].bind(stmt.pStmt, i + 1)
+        }
+        stmt.preflight()
+        if (stmt.rc == ResultCode.SQLITE_DONE || stmt.rc == ResultCode.SQLITE_ROW) {
+            return lang.Result<Statement, ResultCode>.ok(stmt)
+        } else {
+            return lang.Result<Statement, ResultCode>.err(stmt.rc)
+        }
+    },
+    execute(sql: str.Str, params: vec.Vec<SQLBindable>) : lang.Result<Statement, ResultCode> {
         let pStmt = unsigned[1](0)
         let rc = sqlite3_prepare_v2(this.handle, sql.c_str(), -1, runtime.runtime_get_string_array_data_pointer(pStmt), 0)
         if (rc != ResultCode.SQLITE_OK) {
