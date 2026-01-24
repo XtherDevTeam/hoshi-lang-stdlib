@@ -10,6 +10,8 @@ use socket "socket"
 use uri "uri"
 use random "random"
 use console "console"
+use cookie "cookie"
+use time "time"
 
 struct HTTPRequestHeader {
     method: str.Str,
@@ -524,6 +526,7 @@ struct HTTPResponse {
     content_length() : int,
     content_type() : str.Str,
     status_code() : int,
+    cookies(c: cookie.Cookies) : HTTPResponse,
     reader() : RequestReader
 }
 
@@ -535,6 +538,53 @@ impl HTTPResponse {
     },
     reader() : RequestReader {
         return RequestReader(this.socket, this.cached_recv, this.header.headers)
+    },
+    cookies(c: cookie.Cookies) : HTTPResponse {
+        if (this.header.headers.contains("set-cookie") == false) {
+            return this
+        }
+        let cookie_str = this.header.headers["set-cookie"]
+        let parts = cookie_str.split(";")
+        if (parts.length == 0) {
+            return this
+        }
+        
+        let first_part = parts[0].trim()
+        let eq_idx = first_part.find("=")
+        if (eq_idx == -1) {
+            return this
+        }
+        
+        let key = first_part.substring(0, eq_idx).trim()
+        let value = first_part.substring(eq_idx + 1, first_part.length).trim()
+        
+        let section = cookie.CookieSection()
+        section.key(key).value(value)
+        
+        for (let i = 1; i < parts.length; i += 1) {
+            let part = parts[i].trim()
+            let lower_part = part.lowercase()
+            if (lower_part == "secure") {
+                section.secure(true)
+            } elif (lower_part == "httponly") {
+                section.http_only(true)
+            } elif (lower_part.startswith("path=")) {
+                section.path(part.substring(5, part.length))
+            } elif (lower_part.startswith("domain=")) {
+                section.domain(part.substring(7, part.length))
+            } elif (lower_part.startswith("max-age=")) {
+                let max_age_str = part.substring(8, part.length)
+                section.max_age(time.Duration.seconds(str.toInt(max_age_str)))
+            }
+            // TODO: Expires parsing is complicated, skipping for now as per plan focus on structure or if needed I can add simplified support
+        }
+        
+        if (section.domain.length == 0) {
+            section.domain(this.resource.host)
+        }
+        
+        c.put(section)
+        return this
     },
     status_code() : int {
         return this.header.status_code

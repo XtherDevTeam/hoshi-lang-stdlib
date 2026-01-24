@@ -1,0 +1,40 @@
+use http "net/http"
+use cookie "net/cookie"
+use uri "net/uri"
+use hashMap "hashMap"
+use console "console"
+use fs "fs"
+use time "time"
+use str "str"
+use lang "builtin"
+
+func main() : int {
+    let [req, err] = http.open("GET", "https://google.com")
+    if (err != null) {
+        console.print("Failed to open URL: ", err, "\n")
+        return 0
+    }
+    let [resp, err] = req.send()
+    if (err != null) {
+        console.print("Failed to send request: ", err, "\n")
+        return 0
+    }
+    
+    let temp_file = "test_cookies_temp.txt"
+    let [f, err] = fs.open(temp_file, "r+")
+    if (err != null) {
+        console.print("Failed to open temp file: ", err, "\n")
+        return 0
+    }
+    let backend = cookie.FileCookieBackend(f)
+    let jar = cookie.Cookies(backend)
+
+    console.print("Extracting cookies...\n", resp.header, "\n")
+    resp.cookies(jar)
+
+    console.print("Serialized for 'example.com': '", jar.get_cookies("example.com"), "'\n")
+    console.print("Serialized for 'google.com': '", jar.get_cookies("google.com"), "'\n")
+
+    jar.save()
+    return 0
+}

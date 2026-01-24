@@ -1,0 +1,420 @@
+use str "str"
+use hashMap "hashMap"
+use time "time"
+use file "file"
+use fs "fs"
+use uri "uri"
+use vec "vec"
+use lang "builtin"
+
+struct Cookie {
+    sections: hashMap.HashMap<str.Str, str.Str>,
+    section_secure: bool,
+    section_http_only: bool,
+    constructor(),
+    constructor(sections: hashMap.HashMap<str.Str, str.Str>),
+    put(key: str.Str, value: str.Str) : Cookie,
+    get(key: str.Str) : str.Str,
+    remove(key: str.Str) : Cookie,
+    contains(key: str.Str) : bool,
+    expires(date: time.Date) : Cookie,
+    max_age(duration: time.Duration) : Cookie,
+    secure(set: bool) : Cookie,
+    http_only(set: bool) : Cookie,
+    path(path: str.Str) : Cookie,
+    to_string() : str.Str
+}
+
+impl Cookie {
+    constructor() {
+        this.sections = hashMap.HashMap<str.Str, str.Str>()
+        this.section_secure = false
+        this.section_http_only = false
+    },
+    constructor(sections: hashMap.HashMap<str.Str, str.Str>) {
+        this.sections = sections
+        this.section_secure = false
+        this.section_http_only = false
+    },
+    put(key: str.Str, value: str.Str) : Cookie {
+        this.sections.put(key, value)
+        return this
+    },
+    get(key: str.Str) : str.Str {
+        return this.sections[key]
+    },
+    remove(key: str.Str) : Cookie {
+        this.sections.remove(key)
+        return this
+    },
+    contains(key: str.Str) : bool {
+        return this.sections.contains(key)
+    },
+    expires(date: time.Date) : Cookie {
+        // in C strftime format "%a, %d %b %Y %H:%M:%S %Z"
+        return this.put("expires", date.format("%a, %d %b %Y %H:%M:%S %Z"))
+    },
+    max_age(duration: time.Duration) : Cookie {
+        return this.put("max-age", str.Stringable(duration.time.seconds).to_string())
+    },
+    secure(set: bool) : Cookie {
+        this.section_secure = set
+        return this
+    },
+    http_only(set: bool) : Cookie {
+        this.section_http_only = set
+        return this
+    },
+    path(path: str.Str) : Cookie {
+        return this.put("path", path)
+    },
+    to_string() : str.Str {
+        let result : str.Str = ""
+        let keys = this.sections.keys()
+        for (let i = 0; i < keys.length; i += 1) {
+            let key = keys[i]
+            let value = this.sections[key]
+            result += key
+            result.push('=')
+            result += value
+            result.push(';')
+        }
+        if (this.section_secure) {
+            result += "secure;"
+        }
+        if (this.section_http_only) {
+            result += "httponly;"
+        }
+        result.pop() // remove the last semicolon
+        return result
+    }
+}
+
+impl Cookie : str.Stringable {
+    to_string() : str.Str {
+        return this.to_string()
+    }
+}
+
+/**
+  * Parses a cookie string into a Cookie object.
+  * @param {str.Str} cookie_str - The cookie string to parse.
+  * @returns {Cookie} The parsed Cookie object.
+  * @note No validation is performed on the cookie string.
+  */
+func parse(cookie_str: str.Str) : Cookie {
+    let cookie = Cookie()
+    let sections = cookie_str.split(";")
+    for (let i = 0; i < sections.length; i += 1) {
+        let section = sections[i]
+        let key_value = section.split("=")
+        if (key_value.length == 2) {
+            let key = key_value[0].trim().lowercase()
+            let value = key_value[1].trim()
+            cookie.put(key, value)
+        } elif (key_value.length == 1) {
+            let key = key_value[0].trim().lowercase()
+            if (key == "secure") {
+                cookie.secure(true)
+            } elif (key == "httponly") {
+                cookie.http_only(true)
+            }
+        }
+    }
+    return cookie
+}
+
+/**
+  * The Cookie Section that used in client side.
+  * Differ from Cookie, this is a section of Cookie.
+  */
+struct CookieSection {
+    key: str.Str,
+    value: str.Str,
+    domain: str.Str,
+    path: str.Str,
+    expires: time.Date,
+    max_age: time.Duration,
+    secure: bool,
+    http_only: bool,
+    constructor(),
+    constructor(key: str.Str, value: str.Str, domain: str.Str, path: str.Str, expires: time.Date, max_age: time.Duration, secure: bool, http_only: bool),
+    expires(e: time.Date) : CookieSection,
+    max_age(m: time.Duration) : CookieSection,
+    secure(s: bool) : CookieSection,
+    http_only(h: bool) : CookieSection,
+    domain(d: str.Str) : CookieSection,
+    path(p: str.Str) : CookieSection,
+    key(k: str.Str) : CookieSection,
+    value(v: str.Str) : CookieSection,
+    static parse(csv: str.Str) : CookieSection,
+    to_string() : str.Str
+}
+
+impl CookieSection {
+    constructor() {
+        this.key = ""
+        this.value = ""
+        this.domain = ""
+        this.path = ""
+        this.expires = time.Date.from_timestamp(0)
+        this.max_age = time.Duration.seconds(0)
+        this.secure = false
+        this.http_only = false
+    },
+    constructor(key: str.Str, value: str.Str, domain: str.Str, path: str.Str, expires: time.Date, max_age: time.Duration, secure: bool, http_only: bool) {
+        this.key = key
+        this.value = value
+        this.domain = domain
+        this.path = path
+        this.expires = expires
+        this.max_age = max_age
+        this.secure = secure
+        this.http_only = http_only
+    },
+    expires(e: time.Date) : CookieSection {
+        this.expires = e
+        return this
+    },
+    max_age(m: time.Duration) : CookieSection {
+        this.max_age = m
+        return this
+    },
+    secure(s: bool) : CookieSection {
+        this.secure = s
+        return this
+    },
+    http_only(h: bool) : CookieSection {
+        this.http_only = h
+        return this
+    },
+    domain(d: str.Str) : CookieSection {
+        this.domain = d
+        return this
+    },
+    path(p: str.Str) : CookieSection {
+        this.path = p
+        return this
+    },
+    key(k: str.Str) : CookieSection {
+        this.key = k
+        return this
+    },
+    value(v: str.Str) : CookieSection {
+        this.value = v
+        return this
+    },
+    static parse(csv: str.Str) : CookieSection {
+        let section = CookieSection()
+        let values = csv.split(",")
+        // values are all in formats of key,value,secure,httponly,expires,max_age,domain,path
+        // check if values length is 8
+        if (values.length != 8) {
+            return null
+        }
+        section.key(uri.urldecode(values[0]))
+        section.value(uri.urldecode(values[1]))
+        section.secure(values[2] == "true")
+        section.http_only(values[3] == "true")
+        section.expires(time.Date.from_timestamp(str.toInt(values[4])))
+        section.max_age(time.Duration.seconds(str.toInt(values[5])))
+        section.domain(uri.urldecode(values[6]))
+        section.path(uri.urldecode(values[7]))
+        return section
+    },
+    to_string() : str.Str {
+        let http_only : str.Str = "true"
+        let secure : str.Str = "true"
+        if (this.http_only == false) {
+            http_only = "false"
+        }
+        if (this.secure == false) {
+            secure = "false"
+        }
+        let expires = str.Stringable(this.expires.time.seconds).to_string()
+        let max_age = str.Stringable(this.max_age.time.seconds).to_string()
+        return str.format("{},{},{},{},{},{},{},{}", 
+            uri.urlencode(this.key), 
+            uri.urlencode(this.value), 
+            secure, 
+            http_only, 
+            expires, 
+            max_age, 
+            uri.urlencode(this.domain), 
+            uri.urlencode(this.path))
+    }
+}
+
+impl CookieSection : str.Stringable {
+    to_string() : str.Str {
+        return this.to_string()
+    }
+}
+
+interface CookieBackend {
+    serialize(sections: vec.Vec<CookieSection>) : str.Str,
+    deserialize() : vec.Vec<CookieSection>
+}
+
+struct FileCookieBackend {
+    f: fs.OSFile,
+    constructor(f: fs.OSFile),
+    static from_path(path: str.Str) : lang.Result<FileCookieBackend, str.Str>,
+    serialize(sections: vec.Vec<CookieSection>) : bool,
+    deserialize() : vec.Vec<CookieSection>,
+    finalizer()
+}
+
+impl FileCookieBackend {
+    constructor(f: fs.OSFile) {
+        this.f = f
+    },
+    static from_path(path: str.Str) : lang.Result<FileCookieBackend, str.Str> {
+        let [f, err] = fs.open(path, "w+")
+        if (err != null) {
+            return lang.Result<FileCookieBackend, str.Str>.err(err)
+        }
+        return lang.Result<FileCookieBackend, str.Str>.ok(FileCookieBackend(f))
+    },
+    serialize(sections: vec.Vec<CookieSection>) : bool {
+        let result : str.Str = ""
+        for (let i = 0; i < sections.length; i += 1) {
+            let section = sections[i]
+            // store as csv
+            result += section.to_string()
+            result.push('\n')
+        }
+        this.f.seek(0, 0)
+        this.f.write(result.data, result.length)
+        return true
+    },
+    deserialize() : vec.Vec<CookieSection> {
+        let sections : vec.Vec<CookieSection> = vec.Vec<CookieSection>()
+        this.f.seek(0, 0)
+        let lines = str.Str(this.f.read(this.f.size()).data).split("\n")
+        for (let i = 0; i < lines.length; i += 1) {
+            let line = lines[i]
+            let section = CookieSection.parse(line)
+            if (section == null) {
+                // explicitly ignore invalid sections
+                continue
+            }
+            sections.push(section)
+        }
+        return sections
+    },
+    finalizer() {
+        if (this.f != null) {
+            this.f.close()
+        }
+    }
+}
+
+impl FileCookieBackend : CookieBackend {
+    serialize(sections: vec.Vec<CookieSection>) : str.Str {
+        return this.serialize(sections)
+    },
+    deserialize() : vec.Vec<CookieSection> {
+        return this.deserialize()
+    }
+}
+
+struct Cookies {
+    sections: hashMap.HashMap<str.Str, hashMap.HashMap<str.Str, CookieSection> >,
+    backend: CookieBackend,
+    constructor(backend: CookieBackend),
+    get(key: str.Str) : CookieSection,
+    put(value: CookieSection) : Cookies,
+    remove(key: str.Str) : Cookies,
+    contains(key: str.Str) : bool,
+    save() : Cookies,
+    deserialize() : Cookies,
+    get_cookies(domains: str.Str) : str.Str
+}
+
+impl Cookies {
+    constructor(backend: CookieBackend) {
+        this.sections = hashMap.HashMap<str.Str, hashMap.HashMap<str.Str, CookieSection> >()
+        this.backend = backend
+        this.deserialize()
+    },
+    get(key: str.Str) : CookieSection {
+        let domains = this.sections.keys()
+        for (let i = 0; i < domains.length; i += 1) {
+            let domain = domains[i]
+            if (this.sections[domain].contains(key)) {
+                return this.sections[domain][key]
+            }
+        }
+        return null
+    },
+    put(value: CookieSection) : Cookies {
+        if (this.sections.contains(value.domain) == false) {
+            this.sections.put(value.domain, hashMap.HashMap<str.Str, CookieSection>())
+        }
+        this.sections[value.domain][value.key] = value
+        return this
+    },
+    remove(key: str.Str) : Cookies {
+        if (this.sections.contains(key) == false) {
+            return this
+        }
+        this.sections[key].remove(key)
+        return this
+    },
+    contains(key: str.Str) : bool {
+        let domains = this.sections.keys()
+        for (let i = 0; i < domains.length; i += 1) {
+            let domain = domains[i]
+            if (this.sections[domain].contains(key)) {
+                return true
+            }
+        }
+        return false
+    },
+    save() : Cookies {
+        let final = vec.Vec<CookieSection>()
+        let domains = this.sections.keys()
+        for (let i = 0; i < domains.length; i += 1) {
+            let domain = domains[i]
+            let keys = this.sections[domain].keys()
+            for (let j = 0; j < keys.length; j += 1) {
+                let key = keys[j]
+                final.push(this.sections[domain][key])
+            }
+        }
+        this.backend.serialize(final)
+        return this
+    },
+    deserialize() : Cookies {
+        let sections = this.backend.deserialize()
+        for (let i = 0; i < sections.length; i += 1) {
+            let section = sections[i]
+            this.put(section)
+        }
+        return this
+    },
+    get_cookies(domains: str.Str) : str.Str {
+        let result : str.Str = ""
+        let stored_domains = this.sections.keys()
+        for (let i = 0; i < stored_domains.length; i += 1) {
+            let stored_domain = stored_domains[i]
+            
+            if (domains == stored_domain || domains.endswith(stored_domain) || (stored_domain.startswith(".") && domains == stored_domain.substring(1, stored_domain.length))) {
+                let domain_cookies = this.sections[stored_domain]
+                let keys = domain_cookies.keys()
+                for (let j = 0; j < keys.length; j += 1) {
+                    let key = keys[j]
+                    let section = domain_cookies[key]
+                    if (result.length > 0) {
+                        result += "; "
+                    }
+                    result += key
+                    result.push('=')
+                    result += section.value
+                }
+            }
+        }
+        return result
+    }
+}
