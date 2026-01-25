@@ -1,0 +1,18 @@
+{
+    "targets": {
+        "luonnotar": {
+            "flags": "--build-mode release",
+            "filename": "luonnotar",
+            "arch": "universal",
+            "sourcefile": "index.hoshi",
+            "defines": {
+                "COLUMBINA": "1"
+            },
+            "visible": true,
+            "platform": "universal",
+            "type": "binary"
+        }
+    },
+    "minimum_hoshi_build": 60,
+    "minimum_pm_version": 1
+}

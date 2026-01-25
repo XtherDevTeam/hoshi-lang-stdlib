@@ -1,0 +1,55 @@
+use http "net/http"
+use cookie "net/cookie"
+use uri "net/uri"
+use hashMap "hashMap"
+use console "console"
+use fs "fs"
+use str "str"
+use lang "builtin"
+
+func main() : int {
+    let [url, err] = uri.parseURL("https://www.xiaokang00010.top:62112/")
+    if (err != null) {
+        console.print("Failed to parse URL: ", err, "\n")
+        return 1
+    }
+
+    // Create a cookie jar and add a cookie for example.com
+    let temp_file = "test_request_cookies_temp.txt"
+    let [f, err] = fs.open(temp_file, "w+")
+    if (err != null) {
+        console.print("Failed to open temp file: ", err, "\n")
+        return 1
+    }
+    let backend = cookie.FileCookieBackend(f)
+    let jar = cookie.Cookies(backend)
+    
+    let section = cookie.CookieSection()
+    section.key("user_id").value("zoeng_jyut_jing").domain("xiaokang00010.top").path("/")
+    jar.put(section)
+
+    // Create an HTTPRequest
+    let [req, err] = http.open("GET", "https://www.xiaokang00010.top:62112/")
+    if (err != null) {
+        console.print("Failed to open request: ", err, "\n")
+        return 1
+    }
+
+    // Patch cookies
+    console.print("Patching cookies into request...\n")
+    req.cookies(jar)
+
+    // Verify if the cookie header exists in the request header
+    if (req.header.headers.contains("cookie")) {
+        console.print("SUCCESS: Cookie header found in request!\n")
+        console.print("Value: ", req.header.headers["cookie"], "\n")
+    } else {
+        console.print("FAILURE: Cookie header NOT found in request\n")
+        return 1
+    }
+
+    // Cleanup
+    f.close()
+    fs.Path(temp_file).remove()
+    return 0
+}

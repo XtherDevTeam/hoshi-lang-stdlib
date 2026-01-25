@@ -5,11 +5,14 @@ use lang "builtin"
 use console "console"
 use fs "fs"
 use json "json"
+use registry "pardo/pm/registry"
+use vec "vec"
 
 func print_help(self: str.Str) : none {
     let help_msg = str.format("pardo package manager for hoshi-lang
 Made with love by Jerry Chou (This project is licensed under the MIT License)
-Usage: {} <command> [options]
+
+Usage: {} <command> [options] [args]
 
 Commands:
   init           Initialize a new pardo.json and build.json manifest
@@ -17,6 +20,12 @@ Commands:
   remove         Remove an installed package and update pardo.json
   build          Build targets specified in build.json
   package        Build and package the current project into a zip artifact
+  
+Remote Management:
+  login          Authenticate with a remote registry
+  logout         Terminal current session
+  whoami         Show current user information
+  publish        Publish current package to the registry
 
 Options:
   -h, --help      Show help message
@@ -49,7 +58,6 @@ func load_pardo_manifest() : lang.Result<pardo.pm.package.PackageManifest, str.S
 func load_build_manifest() : lang.Result<pardo.pm.package.BuildManifest, str.Str> {
     let manifest_path = "build.json"
     if (fs.Path(manifest_path).exists() == false) {
-        // Return a default build manifest if not found, as per "be relax" instruction
         return lang.Result<pardo.pm.package.BuildManifest, str.Str>.ok(pardo.pm.package.BuildManifest())
     }
     
@@ -61,7 +69,6 @@ func load_build_manifest() : lang.Result<pardo.pm.package.BuildManifest, str.Str
     let data = f.read(f.size())
     let json_res = json.parse(str.Str(data.data))
     if (json_res.is_err()) {
-        // Return default on parse failure too if we want to be very relax, but maybe error is better here
         return lang.Result<pardo.pm.package.BuildManifest, str.Str>.ok(pardo.pm.package.BuildManifest())
     }
     return pardo.pm.package.BuildManifest.from_json(json_res.unwrap())
@@ -70,27 +77,24 @@ func load_build_manifest() : lang.Result<pardo.pm.package.BuildManifest, str.Str
 func main() : int {
     let argv = lang.argv()
     
-    // Check for build-number first to be similar to hoshi-lang
-    for (let i = 1; i < argv.length; i += 1) {
-        if (argv[i] == "--build-number") {
-            console.print("1\n")
-            return 0
-        }
-    }
-
     if (pardo.install.github.detect_existing_hoshi_installation() == "") {
         console.print("No existing hoshi installation found. Running setup...\n")
         pardo.install.github.installer("", "")
     }
 
     let is_global = false
+    let registry_url : str.Str = "https://www.xiaokang00010.top:62112/api" // Default registry
     let command : str.Str = ""
-    let registry_url : str.Str = ""
+    let args = vec.Vec<str.Str>()
 
+    // Improved argument parsing
     for (let i = 1; i < argv.length; i += 1) {
         let arg : str.Str = argv[i]
         if (arg == "-h" || arg == "--help") {
             print_help(argv[0])
+            return 0
+        } elif (arg == "--build-number") {
+            console.print("1\n")
             return 0
         } elif (arg == "-g" || arg == "--global") {
             is_global = true
@@ -99,9 +103,16 @@ func main() : int {
                 registry_url = argv[i+1]
                 i += 1
             }
-        } elif (command == "" && arg.startswith("-") == false) {
+        } elif (command == "") {
             command = arg
+        } else {
+            args.push(arg)
         }
+    }
+
+    if (command == "") {
+        print_help(argv[0])
+        return 0
     }
 
     let pm : pardo.pm.instance.PackageManagementBackend = null
@@ -112,22 +123,8 @@ func main() : int {
     }
 
     if (command == "init") {
-        let pkg_name : str.Str = ""
-        for (let i = 1; i < argv.length; i += 1) {
-            let arg : str.Str = argv[i]
-            if (arg == "init") { continue }
-            if (arg == "-g" || arg == "--global") { continue }
-            if (arg == "-r" || arg == "--registry") {
-                i += 1
-                continue
-            }
-            if (arg.startswith("-")) { continue }
-            pkg_name = arg
-            break
-        }
-        if (pkg_name == "") {
-            pkg_name = fs.Path.current_dir().filename()
-        }
+        let pkg_name = fs.Path.current_dir().filename()
+        if (args.length > 0) { pkg_name = args[0] }
         
         let result = pm.init(pkg_name)
         if (result.is_err()) {
@@ -140,18 +137,7 @@ func main() : int {
 
     if (command == "install") {
         let pkg_to_install : str.Str = ""
-        for (let i = 1; i < argv.length; i += 1) {
-            let arg : str.Str = argv[i]
-            if (arg == "install") { continue }
-            if (arg == "-g" || arg == "--global") { continue }
-            if (arg == "-r" || arg == "--registry") {
-                i += 1
-                continue
-            }
-            if (arg.startswith("-")) { continue }
-            pkg_to_install = arg
-            break
-        }
+        if (args.length > 0) { pkg_to_install = args[0] }
 
         let source_impl = pardo.pm.resolve.DefaultPackageSource()
         if (registry_url != "") {
@@ -159,111 +145,61 @@ func main() : int {
         }
         let source : pardo.pm.package.PackageSource = source_impl
 
+        let manifest : pardo.pm.package.PackageManifest = null
         if (is_global) {
-            let manifest = pardo.pm.package.PackageManifest(
-                "global-install", "1.0.0", "", "", "", hashMap.HashMap<str.Str, str.Str>()
-            )
-            
-            if (pkg_to_install != "") {
-                let pkg_name = pkg_to_install
-                let pkg_version = str.Str("")
-                if (pkg_to_install.find("@") != -1) {
-                    let parts = pkg_to_install.split("@")
-                    if (parts.length >= 2) {
-                        pkg_name = parts[0]
-                        pkg_version = parts[1]
-                    }
-                }
-
-                if (pkg_version == "") {
-                    console.print(str.format("Resolving latest version for {}...\n", pkg_name))
-                    let pkg_info_res = source.query_package(pkg_name)
-                    if (pkg_info_res.is_err()) {
-                        console.print(str.format("Error: Could not find package {}\n", pkg_name))
-                        return 1
-                    }
-                    let pkg_info = pkg_info_res.unwrap()
-                    if (pkg_info.versions.length == 0) {
-                        console.print(str.format("Error: No versions found for package {}\n", pkg_name))
-                        return 1
-                    }
-                    pkg_version = ">=" + pkg_info.versions[0]
-                }
-                manifest.dependencies.put(pkg_name, pkg_version)
-            }
-            
-            let result = pm.install(manifest, source)
-            if (result.is_err()) {
-                console.print(str.format("Installation failed: {}\n", result.unwrap_err()))
-                return 1
-            }
-            console.print("Installation successful!\n")
-            return 0
+            manifest = pardo.pm.package.PackageManifest("global-install", "1.0.0", "", "", "", hashMap.HashMap<str.Str, str.Str>())
         } else {
             let manifest_res = load_pardo_manifest()
             if (manifest_res.is_err()) {
                 console.print(str.format("Error: {}\n", manifest_res.unwrap_err()))
                 return 1
             }
-            let manifest = manifest_res.unwrap()
-
-            if (pkg_to_install != "") {
-                let pkg_name = pkg_to_install
-                let pkg_version = str.Str("")
-                if (pkg_to_install.find("@") != -1) {
-                    let parts = pkg_to_install.split("@")
-                    if (parts.length >= 2) {
-                        pkg_name = parts[0]
-                        pkg_version = parts[1]
-                    }
-                }
-
-                if (pkg_version == "") {
-                    console.print(str.format("Resolving latest version for {}...\n", pkg_name))
-                    let pkg_info_res = source.query_package(pkg_name)
-                    if (pkg_info_res.is_err()) {
-                        console.print(str.format("Error: Could not find package {}\n", pkg_name))
-                        return 1
-                    }
-                    let pkg_info = pkg_info_res.unwrap()
-                    if (pkg_info.versions.length == 0) {
-                        console.print(str.format("Error: No versions found for package {}\n", pkg_name))
-                        return 1
-                    }
-                    pkg_version = ">=" + pkg_info.versions[0]
-                }
-                manifest.dependencies.put(pkg_name, pkg_version)
-            }
-            
-            let result = pm.install(manifest, source)
-            if (result.is_err()) {
-                console.print(str.format("Installation failed: {}\n", result.unwrap_err()))
-                return 1
-            }
-            console.print("Installation successful!\n")
-            return 0
+            manifest = manifest_res.unwrap()
         }
+
+        if (pkg_to_install != "") {
+            let pkg_name = pkg_to_install
+            let pkg_version = str.Str("")
+            if (pkg_to_install.find("@") != -1) {
+                let parts = pkg_to_install.split("@")
+                if (parts.length >= 2) {
+                    pkg_name = parts[0]
+                    pkg_version = parts[1]
+                }
+            }
+
+            if (pkg_version == "") {
+                console.print(str.format("Resolving latest version for {}...\n", pkg_name))
+                let pkg_info_res = source.query_package(pkg_name)
+                if (pkg_info_res.is_err()) {
+                    console.print(str.format("Error: Could not find package {}\n", pkg_name))
+                    return 1
+                }
+                let pkg_info = pkg_info_res.unwrap()
+                if (pkg_info.versions.length == 0) {
+                    console.print(str.format("Error: No versions found for package {}\n", pkg_name))
+                    return 1
+                }
+                pkg_version = ">=" + pkg_info.versions[0]
+            }
+            manifest.dependencies.put(pkg_name, pkg_version)
+        }
+        
+        let result = pm.install(manifest, source)
+        if (result.is_err()) {
+            console.print(str.format("Installation failed: {}\n", result.unwrap_err()))
+            return 1
+        }
+        console.print("Installation successful!\n")
+        return 0
     }
 
     if (command == "remove") {
-        let pkg_to_remove : str.Str = ""
-        for (let i = 1; i < argv.length; i += 1) {
-            let arg : str.Str = argv[i]
-            if (arg == "remove") { continue }
-            if (arg == "-g" || arg == "--global") { continue }
-            if (arg == "-r" || arg == "--registry") {
-                i += 1
-                continue
-            }
-            if (arg.startswith("-")) { continue }
-            pkg_to_remove = arg
-            break
-        }
-        
-        if (pkg_to_remove == "") {
+        if (args.length == 0) {
             console.print("Error: Please specify a package name to remove.\n")
             return 1
         }
+        let pkg_to_remove = args[0]
 
         let manifest : pardo.pm.package.PackageManifest = null
         if (is_global == false) {
@@ -290,7 +226,6 @@ func main() : int {
             console.print(str.format("Error: {}\n", manifest_res.unwrap_err()))
             return 1
         }
-        
         let build_manifest_res = load_build_manifest()
         if (build_manifest_res.is_err()) {
             console.print(str.format("Error: {}\n", build_manifest_res.unwrap_err()))
@@ -312,12 +247,75 @@ func main() : int {
         return 0
     }
 
-    if (command == "") {
-        print_help(argv[0])
-    } else {
-        console.print(str.format("Unknown command: {}\n", command))
-        print_help(argv[0])
+    // Remote Specific Commands
+    let remote = registry.PardoRegistryRemote(registry_url)
+
+    if (command == "login") {
+        if (args.length < 2) {
+            console.print("Usage: pardo login <username> <password>\n")
+            return 1
+        }
+        let result = remote.login(args[0], args[1])
+        if (result.is_err()) {
+            console.print("Login failed: ", result.unwrap_err(), "\n")
+            return 1
+        }
+        console.print("Login successful!\n")
+        return 0
     }
 
-    return 0
+    if (command == "logout") {
+        let result = remote.logout()
+        if (result.is_err()) {
+            console.print("Logout failed:", result.unwrap_err(), "\n")
+            return 1
+        }
+        console.print("Logged out successfully.\n")
+        return 0
+    }
+
+    if (command == "whoami") {
+        let result = remote.whoami()
+        if (result.is_err()) {
+            console.print("Error:", result.unwrap_err(), "\n")
+            return 1
+        }
+        let user = result.unwrap()
+        console.print("Logged in as:", user.username, "(", user.email, ")\n")
+        console.print("Description:", user.description, "\n")
+        return 0
+    }
+
+    if (command == "publish") {
+        let manifest_res = load_pardo_manifest()
+        if (manifest_res.is_err()) {
+            console.print("Error loading manifest: ", manifest_res.unwrap_err(), "\n")
+            return 1
+        }
+        let build_manifest_res = load_build_manifest()
+        if (build_manifest_res.is_err()) {
+            console.print("Error loading build manifest: ", build_manifest_res.unwrap_err(), "\n")
+            return 1
+        }
+
+        // 1. Build and package first
+        console.print("Building and packaging artifact...\n")
+        let pkg_res = pm.package(manifest_res.unwrap(), build_manifest_res.unwrap())
+        if (pkg_res.is_err()) {
+            console.print("Package process failed: ", pkg_res.unwrap_err(), "\n")
+            return 1
+        }
+
+        // 2. Publish to remote
+        let result = remote.publish(manifest_res.unwrap(), build_manifest_res.unwrap())
+        if (result.is_err()) {
+            console.print("Publish failed: ", result.unwrap_err(), "\n")
+            return 1
+        }
+        return 0
+    }
+
+    console.print(str.format("Unknown command: {}\n", command))
+    print_help(argv[0])
+    return 1
 }

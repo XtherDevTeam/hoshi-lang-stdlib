@@ -1,0 +1,8 @@
+use columbina "columbina"
+use console "console"
+
+func main() : int {
+    console.print(columbina.columbina().say(), "\n")
+    console.print("The moon gently approached, thus surged the vibrant tide of the Earth.\n")
+    return 0
+}

@@ -12,6 +12,7 @@ use random "random"
 use console "console"
 use cookie "cookie"
 use time "time"
+use json "json"
 
 struct HTTPRequestHeader {
     method: str.Str,
@@ -855,6 +856,7 @@ struct HTTPRequest {
     set_body(body: HTTPRequestBody) : HTTPRequest,
     set_header(key: str.Str, value: str.Str) : HTTPRequest,
     patch_header() : HTTPRequest,
+    cookies(c: cookie.Cookies) : HTTPRequest
 }
 
 impl HTTPRequest {
@@ -1000,6 +1002,13 @@ impl HTTPRequest {
     set_header(key: str.Str, value: str.Str) : HTTPRequest {
         this.header.add_header(key, value)
         return this
+    },
+    cookies(c: cookie.Cookies) : HTTPRequest {
+        let cookie_str = c.get_cookies(this.resource.host)
+        if (cookie_str.length > 0) {
+            this.header.add_header("cookie", cookie_str)
+        }
+        return this
     }
 }
 
@@ -1088,44 +1097,56 @@ impl FormData : HTTPRequestBody {
         return -1 // Transfer-Encoding: chunked will be automatically used
     },
     content_type() : str.Str {
-        return "multipart/form-data; boundary=" + this.boundary
+        return str.format("multipart/form-data; boundary={}", this.boundary)
     },
     write_to(sock: socket.AbstractSocket) : none {
-        let boundary : str.Str = this.boundary + "\r\n"
         let rn : str.Str = "\r\n"
-        let rnrn0 : str.Str = "0\r\n\r\n"    
-        let chunk_size_str : str.Str = ""
+        let rnrn0 : str.Str = "0\r\n\r\n"
+
         for (let index = 0; index < this.data.length; index += 1) {
+            let boundary_str : str.Str = ""
+            if (index == 0) {
+                boundary_str = str.format("--{}\r\n", this.boundary)
+            } else {
+                boundary_str = str.format("\r\n--{}\r\n", this.boundary)
+            }
+
             if (this.data[index].filename.size() != 0) {
                 this.data[index].filename = str.format("filename=\"{}\"", uri.urlencode(this.data[index].filename))
             }
             if (this.data[index].contentType.size() != 0) {
                 this.data[index].contentType = str.format("Content-Type: {}\r\n", this.data[index].contentType)
             }
-            let composed_header = str.format("{}Content-Disposition: form-data; name=\"{}\"; {}\r\n{}\r\n", boundary, this.data[index].name, this.data[index].filename, this.data[index].contentType)
-            chunk_size_str = str.Stringable(str.Hex(composed_header.length)).to_string() + "\r\n"
+            
+            let composed_header = str.format("{}Content-Disposition: form-data; name=\"{}\"; {}\r\n{}\r\n", boundary_str, this.data[index].name, this.data[index].filename, this.data[index].contentType)
+            
+            // Send Header Chunk
+            let chunk_size_str = str.Stringable(str.Hex(composed_header.length)).to_string() + "\r\n"
             sock.send(chunk_size_str.data, chunk_size_str.length)
             sock.send(composed_header.data, composed_header.length)
             sock.send(rn.data, rn.length)
-            if (this.data[index].content.size() != -1) {
-                let buffer = this.data[index].content.read(this.data[index].content.size())
-                chunk_size_str = str.Stringable(str.Hex(buffer.size)).to_string() + "\r\n"
-                sock.send(chunk_size_str.data, chunk_size_str.length)
+
+            // Send Body Chunks
+            while (true) {
+                let buffer = this.data[index].content.read(32768)
+                if (buffer.size == 0) {
+                    break
+                }
+                let body_chunk_size_str = str.Stringable(str.Hex(buffer.size)).to_string() + "\r\n"
+                sock.send(body_chunk_size_str.data, body_chunk_size_str.length)
                 sock.send(buffer.data, buffer.size as unsigned)
                 sock.send(rn.data, rn.length)
-            } else {
-                while (true) {
-                    let buffer = this.data[index].content.read(32768)
-                    if (buffer.size == 0) {
-                        break
-                    }
-                    let chunk_size_str = str.Stringable(str.Hex(buffer.size)).to_string() + "\r\n"
-                    sock.send(chunk_size_str.data, chunk_size_str.length)
-                    sock.send(buffer.data, buffer.size as unsigned)
-                    sock.send(rn.data, rn.length)
-                }
             }
         }
+
+        // Send Terminating Boundary Chunk
+        let end_boundary = str.format("\r\n--{}--\r\n", this.boundary)
+        let end_chunk_size_str = str.Stringable(str.Hex(end_boundary.length)).to_string() + "\r\n"
+        sock.send(end_chunk_size_str.data, end_chunk_size_str.length)
+        sock.send(end_boundary.data, end_boundary.length)
+        sock.send(rn.data, rn.length)
+
+        // Send Final Zero Chunk
         sock.send(rnrn0.data, rnrn0.length)
     }
 }
@@ -1184,6 +1205,19 @@ impl str.Str : HTTPRequestBody {
     },
     write_to(sock: socket.AbstractSocket) : none {
         sock.send(this.data, this.length)
+    }
+}
+
+impl json.JSONValue : HTTPRequestBody {
+    content_length() : unsigned {
+        return this.to_string().length
+    },
+    content_type() : str.Str {
+        return "application/json"
+    },
+    write_to(sock: socket.AbstractSocket) : none {
+        let json_str = this.to_string()
+        sock.send(json_str.data, json_str.length)
     }
 }
 

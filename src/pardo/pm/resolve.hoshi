@@ -25,7 +25,7 @@ impl DefaultPackageSource {
         this.remote = "https://www.xiaokang00010.top:62112/api/index"
     },
     set_remote(remote: str.Str) : DefaultPackageSource {
-        this.remote = remote
+        this.remote = remote + "/index"
         return this
     }
 }

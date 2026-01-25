@@ -36,7 +36,7 @@ impl BasePackageManager {
     },
     create_symlink(link: fs.Path, target: fs.Path) : bool {
         if (link.exists()) {
-            link.remove()
+            runtime.runtime_fs_remove(link.to_string().c_str())
         }
         return target.symlink_to(link)
     },

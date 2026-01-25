@@ -1,0 +1,243 @@
+use str "str"
+use vec "vec"
+use json "json"
+
+enum Permission {
+    Administrator = 0,
+    User = 1
+}
+
+struct User {
+    id: int,
+    username: str.Str,
+    description: str.Str,
+    email: str.Str,
+    permission: int,
+    constructor(id: int, username: str.Str, description: str.Str, email: str.Str, permission: int),
+    static from_json(v: json.JSONValue) : User,
+    to_json(): json.JSONValue
+}
+
+impl User {
+    constructor(id: int, username: str.Str, description: str.Str, email: str.Str, permission: int) {
+        this.id = id
+        this.username = username
+        this.description = description
+        this.email = email
+        this.permission = permission
+    },
+    static from_json(v: json.JSONValue) : User {
+        let tree = dyn_cast<json.JSONDict>(v)
+        if (tree == null) { return null }
+        
+        let id_val = tree["id"], username_val = tree["username"], desc_val = tree["description"], email_val = tree["email"], perm_val = tree["permission"]
+        if (id_val == null || username_val == null || desc_val == null || email_val == null || perm_val == null) { return null }
+        
+        let id_num = dyn_cast<json.Numeric>(id_val)
+        let username_str = dyn_cast<str.Str>(username_val)
+        let desc_str = dyn_cast<str.Str>(desc_val)
+        let email_str = dyn_cast<str.Str>(email_val)
+        let perm_num = dyn_cast<json.Numeric>(perm_val)
+        
+        return User(
+            id_num.getInt(),
+            username_str,
+            desc_str,
+            email_str,
+            perm_num.getInt()
+        )
+    },
+    to_json() : json.JSONValue {
+        return json.JSONDict()
+            .put("id", json.Numeric(this.id))
+            .put("username", this.username)
+            .put("description", this.description)
+            .put("email", this.email)
+            .put("permission", json.Numeric(this.permission))
+    }
+}
+
+struct PackageVersion {
+    id: int,
+    package_id: int,
+    tag_name: str.Str,
+    revision_notes: str.Str,
+    artifacts: json.JSONList,
+    dependencies: json.JSONDict,
+    created_at: str.Str,
+    constructor(id: int, package_id: int, tag_name: str.Str, revision_notes: str.Str, artifacts: json.JSONList, dependencies: json.JSONDict, created_at: str.Str),
+    static from_json(v: json.JSONValue) : PackageVersion,
+    to_json(): json.JSONValue
+}
+
+impl PackageVersion {
+    constructor(id: int, package_id: int, tag_name: str.Str, revision_notes: str.Str, artifacts: json.JSONList, dependencies: json.JSONDict, created_at: str.Str) {
+        this.id = id
+        this.package_id = package_id
+        this.tag_name = tag_name
+        this.revision_notes = revision_notes
+        this.artifacts = artifacts
+        this.dependencies = dependencies
+        this.created_at = created_at
+    },
+    static from_json(v: json.JSONValue) : PackageVersion {
+        let tree = dyn_cast<json.JSONDict>(v)
+        if (tree == null) { return null }
+        
+        let id_val = tree["id"], pkg_id_val = tree["package_id"], tag_val = tree["tag_name"], rev_val = tree["revision_notes"], art_val = tree["artifacts"], dep_val = tree["dependencies"], created_val = tree["created_at"]
+        if (id_val == null || pkg_id_val == null || tag_val == null || rev_val == null || art_val == null || dep_val == null || created_val == null) { return null }
+        
+        let id_num = dyn_cast<json.Numeric>(id_val)
+        let pkg_id_num = dyn_cast<json.Numeric>(pkg_id_val)
+        let tag_str = dyn_cast<str.Str>(tag_val)
+        let rev_str = dyn_cast<str.Str>(rev_val)
+        let art_list = dyn_cast<json.JSONList>(art_val)
+        let dep_dict = dyn_cast<json.JSONDict>(dep_val)
+        let created_str = dyn_cast<str.Str>(created_val)
+        
+        return PackageVersion(
+            id_num.getInt(),
+            pkg_id_num.getInt(),
+            tag_str,
+            rev_str,
+            art_list,
+            dep_dict,
+            created_str
+        )
+    },
+    to_json() : json.JSONValue {
+        return json.JSONDict()
+            .put("id", json.Numeric(this.id))
+            .put("package_id", json.Numeric(this.package_id))
+            .put("tag_name", this.tag_name)
+            .put("revision_notes", this.revision_notes)
+            .put("artifacts", this.artifacts)
+            .put("dependencies", this.dependencies)
+            .put("created_at", this.created_at)
+    }
+}
+
+struct PackageInformation {
+    id: int,
+    name: str.Str,
+    author: str.Str,
+    description: str.Str,
+    repository: str.Str,
+    license: str.Str,
+    readme: str.Str,
+    constructor(id: int, name: str.Str, author: str.Str, description: str.Str, repository: str.Str, license: str.Str, readme: str.Str),
+    static from_json(v: json.JSONValue) : PackageInformation,
+    to_json(): json.JSONValue
+}
+
+impl PackageInformation {
+    constructor(id: int, name: str.Str, author: str.Str, description: str.Str, repository: str.Str, license: str.Str, readme: str.Str) {
+        this.id = id
+        this.name = name
+        this.author = author
+        this.description = description
+        this.repository = repository
+        this.license = license
+        this.readme = readme
+    },
+    static from_json(v: json.JSONValue) : PackageInformation {
+        let tree = dyn_cast<json.JSONDict>(v)
+        if (tree == null) { return null }
+        
+        let id_val = tree["id"], name_val = tree["name"], author_val = tree["author"], desc_val = tree["description"], repo_val = tree["repository"], lic_val = tree["license"], readme_val = tree["readme"]
+        if (id_val == null || name_val == null || author_val == null || desc_val == null || repo_val == null || lic_val == null || readme_val == null) { return null }
+        
+        let id_num = dyn_cast<json.Numeric>(id_val)
+        let name_str = dyn_cast<str.Str>(name_val)
+        let author_str = dyn_cast<str.Str>(author_val)
+        let desc_str = dyn_cast<str.Str>(desc_val)
+        let repo_str = dyn_cast<str.Str>(repo_val)
+        let lic_str = dyn_cast<str.Str>(lic_val)
+        let readme_str = dyn_cast<str.Str>(readme_val)
+        
+        return PackageInformation(
+            id_num.getInt(),
+            name_str,
+            author_str,
+            desc_str,
+            repo_str,
+            lic_str,
+            readme_str
+        )
+    },
+    to_json() : json.JSONValue {
+        return json.JSONDict()
+            .put("id", json.Numeric(this.id))
+            .put("name", this.name)
+            .put("author", this.author)
+            .put("description", this.description)
+            .put("repository", this.repository)
+            .put("license", this.license)
+            .put("readme", this.readme)
+    }
+}
+
+struct Artifact {
+    id: int,
+    package_id: int,
+    unique_id: str.Str,
+    version: str.Str,
+    filename: str.Str,
+    mime: str.Str,
+    platform: str.Str,
+    arch: str.Str,
+    constructor(id: int, package_id: int, unique_id: str.Str, version: str.Str, filename: str.Str, mime: str.Str, platform: str.Str, arch: str.Str),
+    static from_json(v: json.JSONValue) : Artifact,
+    to_json(): json.JSONValue
+}
+
+impl Artifact {
+    constructor(id: int, package_id: int, unique_id: str.Str, version: str.Str, filename: str.Str, mime: str.Str, platform: str.Str, arch: str.Str) {
+        this.id = id
+        this.package_id = package_id
+        this.unique_id = unique_id
+        this.version = version
+        this.filename = filename
+        this.mime = mime
+        this.platform = platform
+        this.arch = arch
+    },
+    static from_json(v: json.JSONValue) : Artifact {
+        let tree = dyn_cast<json.JSONDict>(v)
+        if (tree == null) { return null }
+        
+        let id_val = tree["id"], pkg_id_val = tree["package_id"], unique_val = tree["unique_id"], ver_val = tree["version"], file_val = tree["filename"], mime_val = tree["mime"], plat_val = tree["platform"], arch_val = tree["arch"]
+        if (id_val == null || pkg_id_val == null || unique_val == null || ver_val == null || file_val == null || mime_val == null || plat_val == null || arch_val == null) { return null }
+        
+        let id_num = dyn_cast<json.Numeric>(id_val)
+        let pkg_id_num = dyn_cast<json.Numeric>(pkg_id_val)
+        let unique_str = dyn_cast<str.Str>(unique_val)
+        let ver_str = dyn_cast<str.Str>(ver_val)
+        let file_str = dyn_cast<str.Str>(file_val)
+        let mime_str = dyn_cast<str.Str>(mime_val)
+        let plat_str = dyn_cast<str.Str>(plat_val)
+        let arch_str = dyn_cast<str.Str>(arch_val)
+        
+        return Artifact(
+            id_num.getInt(),
+            pkg_id_num.getInt(),
+            unique_str,
+            ver_str,
+            file_str,
+            mime_str,
+            plat_str,
+            arch_str
+        )
+    },
+    to_json() : json.JSONValue {
+        return json.JSONDict()
+            .put("id", json.Numeric(this.id))
+            .put("package_id", json.Numeric(this.package_id))
+            .put("unique_id", this.unique_id)
+            .put("version", this.version)
+            .put("filename", this.filename)
+            .put("mime", this.mime)
+            .put("platform", this.platform)
+            .put("arch", this.arch)
+    }
+}

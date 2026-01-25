@@ -1,0 +1,263 @@
+use http "net/http"
+use cookie "net/cookie"
+use json "json"
+use str "str"
+use fs "fs"
+use vec "vec"
+use lang "builtin"
+use types "pardo/share/types"
+use pardo "pardo"
+use console "console"
+use hashMap "hashMap"
+use uri "net/uri"
+use runtime "runtime"
+
+struct PardoRegistryRemote {
+    registry_url: str.Str,
+    jar: cookie.Cookies,
+    constructor(registry_url: str.Str),
+    login(username: str.Str, password: str.Str) : lang.Result<bool, str.Str>,
+    logout() : lang.Result<bool, str.Str>,
+    whoami() : lang.Result<types.User, str.Str>,
+    publish(manifest: pardo.pm.package.PackageManifest, build_manifest: pardo.pm.package.BuildManifest) : lang.Result<bool, str.Str>,
+    
+    // Internal helpers
+    get_cookie_path() : str.Str,
+    send_request_with_body(method: str.Str, path: str.Str, body: http.HTTPRequestBody) : lang.Result<http.HTTPResponse, str.Str>,
+    send_request(method: str.Str, path: str.Str) : lang.Result<http.HTTPResponse, str.Str>,
+    process_response(resp_res: lang.Result<http.HTTPResponse, str.Str>) : lang.Result<json.JSONValue, str.Str>
+}
+
+impl PardoRegistryRemote {
+    constructor(registry_url: str.Str) {
+        this.registry_url = registry_url
+        if (this.registry_url.endswith("/")) {
+            this.registry_url = this.registry_url.substring(0, this.registry_url.length - 1)
+        }
+        
+        let cookie_path = this.get_cookie_path()
+        let [f, err] = fs.open(cookie_path, "a+") // Use a+ to create if not exists
+        if (err != null) {
+            // Fallback or error? Let's try to just use memory jar if file fails for some reason
+            this.jar = cookie.Cookies(null)
+        } else {
+            let backend = cookie.FileCookieBackend(f)
+            this.jar = cookie.Cookies(backend)
+        }
+    },
+    
+    get_cookie_path() : str.Str {
+        let hoshi_home = pardo.install.github.detect_existing_hoshi_installation()
+        if (hoshi_home == "") {
+            return "pardo-cli.cookies.csv" // Fallback to current dir
+        }
+        return str.Stringable(fs.Path(hoshi_home) / "pardo-cli.cookies.csv").to_string()
+    },
+    
+    send_request_with_body(method: str.Str, path: str.Str, body: http.HTTPRequestBody) : lang.Result<http.HTTPResponse, str.Str> {
+        let full_url = this.registry_url + path
+        let [req, err] = http.open(method, full_url, body)
+        if (err != null) { return lang.Result<http.HTTPResponse, str.Str>.err("Failed to open connection: " + err as str.Str) }
+        
+        req.cookies(this.jar)
+        let [resp, resp_err] = req.send()
+        if (resp_err != null) { return lang.Result<http.HTTPResponse, str.Str>.err("Request failed: " + resp_err as str.Str) }
+        
+        resp.cookies(this.jar)
+        this.jar.save()
+        
+        return lang.Result<http.HTTPResponse, str.Str>.ok(resp)
+    },
+    
+    send_request(method: str.Str, path: str.Str) : lang.Result<http.HTTPResponse, str.Str> {
+        let full_url = this.registry_url + path
+        let [req, err] = http.open(method, full_url)
+        if (err != null) { return lang.Result<http.HTTPResponse, str.Str>.err("Transport Error: " + err as str.Str) }
+        
+        req.cookies(this.jar)
+        let [resp, resp_err] = req.send()
+        if (resp_err != null) { return lang.Result<http.HTTPResponse, str.Str>.err("Transport Error: " + resp_err as str.Str) }
+        
+        resp.cookies(this.jar)
+        this.jar.save()
+        
+        return lang.Result<http.HTTPResponse, str.Str>.ok(resp)
+    },
+
+    process_response(resp_res: lang.Result<http.HTTPResponse, str.Str>) : lang.Result<json.JSONValue, str.Str> {
+        if (resp_res.is_err()) { return lang.Result<json.JSONValue, str.Str>.err(resp_res.unwrap_err()) }
+        let resp = resp_res.unwrap()
+        
+        let [body_str, body_err] = resp.text()
+        if (body_err != null) { return lang.Result<json.JSONValue, str.Str>.err("Transport Error: Failed to read response body") }
+        
+        let [json_res, json_err] = json.parse(body_str)
+        if (json_err != null) { return lang.Result<json.JSONValue, str.Str>.err("Application Error: Invalid JSON response") }
+        
+        let dict = dyn_cast<json.JSONDict>(json_res)
+        if (dict != null && dict.contains("status")) {
+            let status = dyn_cast<str.Str>(dict["status"])
+            if (status == "error") {
+                let msg : str.Str = "Unknown error"
+                if (dict.contains("message")) {
+                    let msg_val = dict["message"]
+                    msg = dyn_cast<str.Str>(msg_val)
+                }
+                return lang.Result<json.JSONValue, str.Str>.err("Application Error: " + msg)
+            }
+        }
+        
+        return lang.Result<json.JSONValue, str.Str>.ok(json_res)
+    },
+    
+    login(username: str.Str, password: str.Str) : lang.Result<bool, str.Str> {
+        let payload = json.JSONDict()
+            .put("username", username as json.JSONValue)
+            .put("password", password as json.JSONValue)
+        
+        let res = this.process_response(this.send_request_with_body("POST", "/v1/user/login", payload as json.JSONValue))
+        if (res.is_err()) { return lang.Result<bool, str.Str>.err(res.unwrap_err()) }
+        
+        return lang.Result<bool, str.Str>.ok(true)
+    },
+    
+    logout() : lang.Result<bool, str.Str> {
+        let res = this.process_response(this.send_request("GET", "/v1/user/logout"))
+        if (res.is_err()) { return lang.Result<bool, str.Str>.err(res.unwrap_err()) }
+        return lang.Result<bool, str.Str>.ok(true)
+    },
+    
+    whoami() : lang.Result<types.User, str.Str> {
+        let res = this.process_response(this.send_request("GET", "/v1/user/info"))
+        if (res.is_err()) { return lang.Result<types.User, str.Str>.err(res.unwrap_err()) }
+        
+        let user = types.User.from_json(res.unwrap())
+        if (user == null) { return lang.Result<types.User, str.Str>.err("Application Error: Failed to parse user profile") }
+        
+        return lang.Result<types.User, str.Str>.ok(user)
+    },
+    
+    publish(manifest: pardo.pm.package.PackageManifest, build_manifest: pardo.pm.package.BuildManifest) : lang.Result<bool, str.Str> {
+        // 1. Get current user
+        let me_res = this.whoami()
+        if (me_res.is_err()) { return lang.Result<bool, str.Str>.err("Authentication required: " + me_res.unwrap_err()) }
+        let me = me_res.unwrap()
+        
+        // 2. Check if package exists
+        console.print("Checking package status for '", manifest.name, "'...\n")
+        let pkg_info_payload = json.JSONDict().put("name", manifest.name as json.JSONValue)
+        let pkg_res = this.process_response(this.send_request_with_body("POST", "/v1/package/info", pkg_info_payload as json.JSONValue))
+        
+        let package_id = -1
+        if (pkg_res.is_err()) {
+            let err_msg = pkg_res.unwrap_err()
+            if (err_msg.find("package not found") != -1) {
+                console.print("Package '", manifest.name, "' not found. Creating...\n")
+                let create_payload = json.JSONDict()
+                    .put("name", manifest.name as json.JSONValue)
+                    .put("description", str.Str("A hoshi-lang package published via pardo publish") as json.JSONValue)
+                    .put("repository", manifest.repository as json.JSONValue)
+                    .put("license", manifest.license as json.JSONValue)
+                    .put("readme", str.Str("No readme provided") as json.JSONValue)
+                    
+                let create_res = this.process_response(this.send_request_with_body("POST", "/v1/package/add", create_payload as json.JSONValue))
+                if (create_res.is_err()) { return lang.Result<bool, str.Str>.err("Failed to create package: " + create_res.unwrap_err()) }
+                
+                // Re-fetch info to get ID
+                pkg_res = this.process_response(this.send_request_with_body("POST", "/v1/package/info", pkg_info_payload as json.JSONValue))
+                if (pkg_res.is_err()) { return lang.Result<bool, str.Str>.err("Failed to fetch created package info: " + pkg_res.unwrap_err()) }
+            } else {
+                return lang.Result<bool, str.Str>.err("Failed to check package status: " + err_msg)
+            }
+        }
+        
+        let pkg_info_dict = dyn_cast<json.JSONDict>(pkg_res.unwrap())
+        if (pkg_info_dict == null || pkg_info_dict.contains("data") == false) { return lang.Result<bool, str.Str>.err("Application Error: Server returned invalid package info") }
+        let pkg_data = dyn_cast<json.JSONDict>(pkg_info_dict["data"])
+        let package_id_json = dyn_cast<json.Numeric>(pkg_data["id"])
+        package_id = package_id_json.getInt()
+        let author = dyn_cast<str.Str>(pkg_data["author"])
+        
+        if (author != me.username && me.permission != types.Permission.Administrator) {
+            return lang.Result<bool, str.Str>.err("You are not the author of this package")
+        }
+        
+        // 3. Check version
+        console.print("Checking version ", manifest.version, "...\n")
+        let ver_info_payload = json.JSONDict()
+            .put("package_id", json.Numeric(package_id) as json.JSONValue)
+            .put("tag_name", manifest.version as json.JSONValue)
+        let ver_res = this.process_response(this.send_request_with_body("POST", "/v1/package/version/info", ver_info_payload as json.JSONValue))
+        
+        if (ver_res.is_err()) {
+            let ver_err_msg = ver_res.unwrap_err()
+            if (ver_err_msg.find("version not found") != -1) {
+                console.print("Version '", manifest.version, "' not found. Creating...\n")
+                let deps_json = json.JSONDict()
+                let keys = manifest.dependencies.keys()
+                for (let i = 0; i < keys.length; i += 1) {
+                    deps_json.put(keys[i], manifest.dependencies[keys[i]] as json.JSONValue)
+                }
+                let create_ver_payload = json.JSONDict()
+                    .put("package_id", json.Numeric(package_id) as json.JSONValue)
+                    .put("tag_name", manifest.version as json.JSONValue)
+                    .put("revision_notes", console.input("Enter revision notes: ").trim() as json.JSONValue)
+                    .put("artifacts", json.JSONList() as json.JSONValue)
+                    .put("dependencies", deps_json as json.JSONValue)
+                    
+                let create_ver_res = this.process_response(this.send_request_with_body("POST", "/v1/package/version/add", create_ver_payload as json.JSONValue))
+                if (create_ver_res.is_err()) { return lang.Result<bool, str.Str>.err("Failed to create version: " + create_ver_res.unwrap_err()) }
+            } else {
+                return lang.Result<bool, str.Str>.err("Failed to check version status: " + ver_err_msg)
+            }
+        }
+        
+        // 4. Determine platform and arch (align with management.hoshi)
+        let platform : str.Str = "universal"
+        let arch : str.Str = "universal"
+
+        if (build_manifest.targets.size() != 0) {
+            let universal = true
+            let targets_keys = build_manifest.targets.keys()
+            for (let i = 0; i < targets_keys.length; i += 1) {
+                let target = build_manifest.targets[targets_keys[i]]
+                if (target.platform != "universal" || target.arch != "universal") {
+                    platform = target.platform
+                    arch = target.arch
+                    universal = false
+                    break
+                }
+            }
+            if (universal) {
+                [[arch == "arm64"]] arch = "arm64"
+                [[arch == "amd64"]] arch = "amd64"
+                [[platform == "darwin"]] platform = "darwin"
+                [[platform == "linux"]] platform = "linux"
+                [[platform == "win32"]] platform = "win32"
+                [[platform == "windows"]] platform = "win32"
+            }
+        }
+
+        let zip_name = str.format("{}-{}-{}.zip", manifest.name, platform, arch)
+        let zip_path = fs.Path.current_dir() / zip_name
+        
+        // 5. Upload artifact
+        console.print("Uploading artifact ", zip_name, " for ", platform, "/", arch, "...\n")
+        
+        let [f, f_err] = fs.open(zip_path.to_string(), "r")
+        if (f_err != null) { return lang.Result<bool, str.Str>.err("Failed to open artifact: " + f_err as str.Str) }
+        
+        let form = http.FormData(vec.Vec<http.FormDataField>())
+            .add_field("package_id", str.Stringable(package_id).to_string())
+            .add_field("version", manifest.version)
+            .add_field("platform", platform)
+            .add_field("arch", arch)
+            .add_field("file", zip_name, "application/zip", f)
+            
+        let upload_res = this.process_response(this.send_request_with_body("POST", "/v1/artifact/upload", form))
+        if (upload_res.is_err()) { return lang.Result<bool, str.Str>.err("Upload failed: " + upload_res.unwrap_err()) }
+        
+        console.print("Publish successful!\n")
+        return lang.Result<bool, str.Str>.ok(true)
+    }
+}
