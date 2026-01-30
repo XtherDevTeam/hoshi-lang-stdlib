@@ -234,7 +234,6 @@ impl PardoRegistryRemote {
                 [[platform == "darwin"]] platform = "darwin"
                 [[platform == "linux"]] platform = "linux"
                 [[platform == "win32"]] platform = "win32"
-                [[platform == "windows"]] platform = "win32"
             }
         }
 

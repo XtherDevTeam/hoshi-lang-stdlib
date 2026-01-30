@@ -34,6 +34,7 @@ let public_routes = hashMap.HashMap<str.Str, str.Str>()
     .put("/v1/user/register", "full-match")
     .put("/v1/user/search", "full-match")
     .put("/v1/user/profile", "starts-with")
+    .put("/v1/user/avatar", "starts-with")
 
 func check_admin_status() : none {
     let [_, err] = data_provider.get_user_by_username("jerry_chou")

@@ -61,7 +61,7 @@ impl BasePackageManager {
         
         [[platform == "darwin"]] platform = "darwin"
         [[platform == "linux"]] platform = "linux"
-        [[platform == "windows"]] platform = "windows"
+        [[platform == "win32"]] platform = "win32"
         
         [[arch == "arm64"]] arch = "arm64"
         [[arch == "amd64"]] arch = "amd64"
@@ -401,7 +401,7 @@ impl ProjectLocalPackageManager {
                 [[arch == "unknown"]] arch = "unknown"
                 [[platform == "darwin"]] platform = "darwin"
                 [[platform == "linux"]] platform = "linux"
-                [[platform == "windows"]] platform = "windows"
+                [[platform == "win32"]] platform = "win32"
                 [[platform == "unknown"]] platform = "unknown"
             }
         } else {
