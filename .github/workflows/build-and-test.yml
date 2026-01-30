@@ -85,8 +85,9 @@ jobs:
           CXX: clang++
           LLVM_DIR: ${{ env.LLVM_PATH }}/lib/cmake/llvm
         shell: bash
-        run: 
+        run: |
           ./build-package/bin/hoshi_lang ./src/pardo/main.hoshi -o build-package/bin/pardo -I src --build-mode release
+          ./build-package/bin/hoshi_lang ./src/pardo/update.hoshi -o build-package/bin/pardo-update -I src --build-mode release
 
       - name: Upload hoshi-lang artifacts
         uses: actions/upload-artifact@v4
@@ -103,6 +104,7 @@ jobs:
           name: hoshi-lang-installer-${{ matrix.os == 'ubuntu-latest' && 'linux' || 'darwin' }}
           path: |
             build-package/bin/pardo
+            build-package/bin/pardo-update
 
   build-windows:
     runs-on: windows-latest
@@ -190,8 +192,9 @@ jobs:
           CXX: clang++
           LLVM_DIR: ${{ env.LLVM_PATH }}/lib/cmake/llvm
         shell: bash
-        run: 
+        run: |
           ./build-package/bin/hoshi_lang.exe ./src/pardo/main.hoshi -o build-package/bin/pardo.exe -I src --build-mode release
+          ./build-package/bin/hoshi_lang.exe ./src/pardo/update.hoshi -o build-package/bin/pardo-update.exe -I src --build-mode release
 
       - name: Upload hoshi-lang artifacts
         uses: actions/upload-artifact@v4
@@ -207,6 +210,7 @@ jobs:
           name: hoshi-lang-installer-windows
           path: |
             build-package/bin/pardo.exe
+            build-package/bin/pardo-update.exe
 
   # New job to handle release creation
   create-release:

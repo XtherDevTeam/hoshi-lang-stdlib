@@ -6,12 +6,13 @@ use fs "fs"
 use vec "vec"
 use lang "builtin"
 use types "pardo/share/types"
-use pardo "pardo"
 use console "console"
 use hashMap "hashMap"
 use uri "net/uri"
 use runtime "runtime"
 use sqlite_backend "net/sqlite_cookie_backend"
+use package "pm/package"
+use install "install"
 
 struct PardoRegistryRemote {
     registry_url: str.Str,
@@ -20,7 +21,7 @@ struct PardoRegistryRemote {
     login(username: str.Str, password: str.Str) : lang.Result<bool, str.Str>,
     logout() : lang.Result<bool, str.Str>,
     whoami() : lang.Result<types.User, str.Str>,
-    publish(manifest: pardo.pm.package.PackageManifest, build_manifest: pardo.pm.package.BuildManifest) : lang.Result<bool, str.Str>,
+    publish(manifest: package.PackageManifest, build_manifest: package.BuildManifest) : lang.Result<bool, str.Str>,
     
     // Internal helpers
     get_cookie_path() : str.Str,
@@ -47,7 +48,7 @@ impl PardoRegistryRemote {
     },
     
     get_cookie_path() : str.Str {
-        let hoshi_home = pardo.install.github.detect_existing_hoshi_installation()
+        let hoshi_home = install.github.detect_existing_hoshi_installation()
         if (hoshi_home == "") {
             return "pardo-cli.cookies.db" // Fallback to current dir
         }
@@ -137,7 +138,7 @@ impl PardoRegistryRemote {
         return lang.Result<types.User, str.Str>.ok(user)
     },
     
-    publish(manifest: pardo.pm.package.PackageManifest, build_manifest: pardo.pm.package.BuildManifest) : lang.Result<bool, str.Str> {
+    publish(manifest: package.PackageManifest, build_manifest: package.BuildManifest) : lang.Result<bool, str.Str> {
         // 1. Get current user
         let me_res = this.whoami()
         if (me_res.is_err()) { return lang.Result<bool, str.Str>.err("Authentication required: " + me_res.unwrap_err()) }

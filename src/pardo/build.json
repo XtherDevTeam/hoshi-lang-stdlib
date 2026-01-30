@@ -1,0 +1,26 @@
+{
+    "targets": {
+        "pardo": {
+            "flags": "-I ..",
+            "filename": "pardo",
+            "arch": "universal",
+            "sourcefile": "main.hoshi",
+            "defines": {},
+            "visible": true,
+            "platform": "universal",
+            "type": "binary"
+        },
+        "pardo-update": {
+            "flags": "-I ..",
+            "filename": "pardo-update",
+            "arch": "universal",
+            "sourcefile": "update.hoshi",
+            "defines": {},
+            "visible": true,
+            "platform": "universal",
+            "type": "binary"
+        }
+    },
+    "minimum_hoshi_build": 53,
+    "minimum_pm_version": 1
+}

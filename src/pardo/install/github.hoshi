@@ -201,14 +201,12 @@ func detect_existing_hoshi_installation() : str.Str {
         result_str = str.Str(buffer.data).trim()
     }
     
-    // Strip /bin or /bin/ from the end if present
-    if (result_str.endswith("/bin")) {
-        return result_str.substring(0, result_str.length - 4)
-    } elif (result_str.endswith("/bin/")) {
-         return result_str.substring(0, result_str.length - 5)
+    let p = fs.Path(result_str)
+    if (p.stem() == "bin") {
+        return p.parent().to_string()
+    } else {
+        return p.to_string()
     }
-    
-    return result_str
 }
 
 enum ShellEnvironmentType {
@@ -371,4 +369,107 @@ func installer(version: str.Str, dest_dir: str.Str) : str.Str {
         console.print("You may need to restart your shell for changes to take effect\n")
     }
     return dest_dir
+}
+
+func updater(version: str.Str, force: bool) : int {
+    let existing_installation = detect_existing_hoshi_installation()
+    if (existing_installation == "") {
+        utils.share_context.logger.error("No existing hoshi installation found to update. Use 'installer' instead.")
+        return 1
+    }
+    let dest_dir = existing_installation
+    console.print(str.format("Updating hoshi-lang installation at {}...\n", dest_dir))
+
+    utils.share_context.logger.log("Querying available releases")
+    let releases_res = get_releases()
+    if (releases_res.is_err()) {
+        utils.share_context.logger.error(str.format("Failed to get releases: {}", releases_res.unwrap_err()))
+        return 1
+    }
+    let releases = releases_res.unwrap()
+    if (releases.length == 0) {
+        utils.share_context.logger.error("No releases found")
+        return 1
+    }
+
+    if (version == "") {
+        if (force == false) {
+            console.print("Successfully acquired release information, available releases:\n")
+            for (let i = 0; i < releases.length && i < 10; i += 1) {
+                console.print(i, ":",  releases[i].name, "(", releases[i].tag_name, ")\n")
+            }
+            version = console.input(str.format("Select a release to install ({}): ", releases[0].tag_name)).trim()
+            if (version == "") {
+                version = releases[0].tag_name
+            }
+        } else {
+            version = releases[0].tag_name
+        }
+    }
+
+    let release_found = -1
+    for (let i = 0; i < releases.length; i += 1) {
+        if (releases[i].tag_name == version) {
+            release_found = i
+            break
+        }
+    }
+    if (release_found == -1) {
+        utils.share_context.logger.error(str.format("Release {} not found", version))
+        return 1
+    }
+
+    let release = releases[release_found]
+    console.print(str.format("Updating to release {} ({}), this may take a while...\n", release.name, release.tag_name))
+
+    let temp_dir_path = fs.Path.temp_dir() / "hoshi-update"
+    let temp_dir = temp_dir_path.to_string()
+    if (temp_dir_path.exists()) {
+        temp_dir_path.remove(true)
+    }
+    temp_dir_path.mkdir(true)
+
+    if (download_release(release, temp_dir) != ResultCode.Success) {
+        utils.share_context.logger.error("Failed to download release asset\n")
+        return 1
+    }
+    
+    let zip_file = temp_dir_path / "hoshi-lang.zip"
+    let extract_dir_path = temp_dir_path / "extracted"
+    let extract_dir = extract_dir_path.to_string()
+    extract_dir_path.mkdir(true)
+
+    if (extract_release(zip_file.to_string(), extract_dir) != ResultCode.Success) {
+        utils.share_context.logger.error("Failed to extract release asset\n")
+        return 1
+    }
+
+    // Hot-swap: rename old installation to backup, then move new one in.
+    let backup_dir = fs.Path(dest_dir + ".bak")
+    if (backup_dir.exists()) {
+        backup_dir.remove(true)
+    }
+
+    console.print("Replacing files...\n")
+    
+    let dest_path = fs.Path(dest_dir)
+    if (dest_path.move(backup_dir) == false) {
+        utils.share_context.logger.error("Failed to backup existing installation. It might be in use.")
+        return 1
+    }
+
+    if (extract_dir_path.move(dest_path) == false) {
+        utils.share_context.logger.error("Failed to move new installation to destination.")
+        // Try to restore backup
+        backup_dir.move(dest_path)
+        return 1
+    }
+
+    [[platform != "win32"]] os.chmod(dest_dir + "/bin/hoshi_lang", 0o755)
+    [[platform != "win32"]] os.chmod(dest_dir + "/bin/pardo", 0o755)
+
+    console.print(str.format("Successfully updated hoshi-lang installation at {}\n", dest_dir))
+    backup_dir.remove(true)
+    
+    return 0
 }
