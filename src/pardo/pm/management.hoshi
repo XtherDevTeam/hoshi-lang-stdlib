@@ -387,8 +387,10 @@ impl ProjectLocalPackageManager {
         for (let i = 0; i < target_names.length; i += 1) {
             let name = target_names[i]
             let target = build_manifest.targets[name]
+            [[platform == "win32"]] let ext = ".exe"
+            [[platform != "win32"]] let ext = ""
             if (target.visible) {
-                exposed_binaries.put(name, str.format("bin/{}", target.filename))
+                exposed_binaries.put(name, str.format("bin/{}{}", target.filename, ext))
                 has_exposed = true
             }
         }
