@@ -241,6 +241,33 @@ impl PardoRegistryRemote {
         let zip_name = str.format("{}-{}-{}.zip", manifest.name, platform, arch)
         let zip_path = fs.Path.current_dir() / zip_name
         
+        // Check if artifact with the same metadata exists and remove it first
+        let list_payload = json.JSONDict()
+            .put("package_id", json.Numeric(package_id) as json.JSONValue)
+            .put("version", manifest.version as json.JSONValue)
+        let list_res = this.process_response(this.send_request_with_body("POST", "/v1/artifact/list", list_payload as json.JSONValue))
+        if (list_res.is_ok()) {
+            let list_data = dyn_cast<json.JSONDict>(list_res.unwrap())
+            if (list_data != null && list_data.contains("data")) {
+                let artifacts = dyn_cast<json.JSONList>(list_data["data"])
+                if (artifacts != null) {
+                    for (let i = 0; i < artifacts.length; i += 1) {
+                        let artifact = dyn_cast<json.JSONDict>(artifacts[i])
+                        if (artifact != null) {
+                            let a_filename = dyn_cast<str.Str>(artifact["filename"])
+                            let a_platform = dyn_cast<str.Str>(artifact["platform"])
+                            let a_arch = dyn_cast<str.Str>(artifact["arch"])
+                            if (a_filename == zip_name && a_platform == platform && a_arch == arch) {
+                                console.print("Removing existing artifact ", zip_name, "...\n")
+                                let remove_payload = json.JSONDict().put("id", artifact["unique_id"])
+                                this.process_response(this.send_request_with_body("POST", "/v1/artifact/remove", remove_payload as json.JSONValue))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // 5. Upload artifact
         console.print("Uploading artifact ", zip_name, " for ", platform, "/", arch, "...\n")
         
