@@ -116,7 +116,7 @@ jobs:
       - name: Download and Setup OpenSSL (Manual)
         run: |
           # Download OpenSSL Installer (Win64 v3.3.2)
-          Invoke-WebRequest -Uri "https://slproweb.com/download/Win64OpenSSL-3_0_18.exe" -OutFile "openssl-setup.exe"
+          Invoke-WebRequest -Uri "https://slproweb.com/download/Win64OpenSSL-3_0_19.exe" -OutFile "openssl-setup.exe"
           
           # Define install path within the workspace
           $opensslPath = "C:\OpenSSL"
