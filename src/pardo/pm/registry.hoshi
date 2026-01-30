@@ -11,6 +11,7 @@ use console "console"
 use hashMap "hashMap"
 use uri "net/uri"
 use runtime "runtime"
+use sqlite_backend "net/sqlite_cookie_backend"
 
 struct PardoRegistryRemote {
     registry_url: str.Str,
@@ -36,22 +37,21 @@ impl PardoRegistryRemote {
         }
         
         let cookie_path = this.get_cookie_path()
-        let [f, err] = fs.open(cookie_path, "a+") // Use a+ to create if not exists
-        if (err != null) {
-            // Fallback or error? Let's try to just use memory jar if file fails for some reason
+        let path = fs.Path(cookie_path)
+        let backend = sqlite_backend.SqliteCookieBackend.from_path(cookie_path)
+        if (backend.is_err()) {
             this.jar = cookie.Cookies(null)
         } else {
-            let backend = cookie.FileCookieBackend(f)
-            this.jar = cookie.Cookies(backend)
+            this.jar = cookie.Cookies(backend.unwrap())
         }
     },
     
     get_cookie_path() : str.Str {
         let hoshi_home = pardo.install.github.detect_existing_hoshi_installation()
         if (hoshi_home == "") {
-            return "pardo-cli.cookies.csv" // Fallback to current dir
+            return "pardo-cli.cookies.db" // Fallback to current dir
         }
-        return str.Stringable(fs.Path(hoshi_home) / "pardo-cli.cookies.csv").to_string()
+        return str.Stringable(fs.Path(hoshi_home) / "pardo-cli.cookies.db").to_string()
     },
     
     send_request_with_body(method: str.Str, path: str.Str, body: http.HTTPRequestBody) : lang.Result<http.HTTPResponse, str.Str> {

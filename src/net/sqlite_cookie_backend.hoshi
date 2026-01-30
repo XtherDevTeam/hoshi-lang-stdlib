@@ -1,0 +1,144 @@
+use str "str"
+use vec "vec"
+use time "time"
+use lang "builtin"
+use sqlite "sqlite"
+use cookie "net/cookie"
+
+/**
+ * A SQLite backend for cookies.
+ * This class implements the CookieBackend interface using a SQLite database.
+ */
+struct SqliteCookieBackend {
+    db: sqlite.Database,
+    constructor(db: sqlite.Database),
+    /**
+     * Creates a new SqliteCookieBackend from a database file path.
+     * @param path The path to the SQLite database file.
+     * @returns A Result containing the SqliteCookieBackend or an error message.
+     */
+    static from_path(path: str.Str) : lang.Result<SqliteCookieBackend, str.Str>,
+    /**
+     * Serializes the given cookie sections into the SQLite database.
+     * This will clear the existing cookies in the database and insert the new ones.
+     * @param sections The list of cookie sections to serialize.
+     * @returns true if the serialization was successful.
+     */
+    serialize(sections: vec.Vec<cookie.CookieSection>) : bool,
+    /**
+     * Deserializes the cookie sections from the SQLite database.
+     * @returns A list of deserialized cookie sections.
+     */
+    deserialize() : vec.Vec<cookie.CookieSection>
+}
+
+impl SqliteCookieBackend {
+    constructor(db: sqlite.Database) {
+        this.db = db
+    },    
+    static from_path(path: str.Str) : lang.Result<SqliteCookieBackend, str.Str> {
+        let db_res = sqlite.open(path)
+        if (db_res.is_err()) {
+            return lang.Result<SqliteCookieBackend, str.Str>.err(str.format("Failed to open sqlite database: {}", db_res.unwrap_err()))
+        }
+        let db = db_res.unwrap()
+        
+        let schema = "CREATE TABLE IF NOT EXISTS cookies (
+            key TEXT,
+            value TEXT,
+            domain TEXT,
+            path TEXT,
+            expires INTEGER,
+            max_age INTEGER,
+            expires_at INTEGER,
+            secure INTEGER,
+            http_only INTEGER,
+            PRIMARY KEY (key, domain, path)
+        );"
+        
+        let exec_res = db.execute_batch(schema)
+        if (exec_res.is_err()) {
+            return lang.Result<SqliteCookieBackend, str.Str>.err(str.format("Failed to create schema: {}", db.error_message()))
+        }
+        
+        return lang.Result<SqliteCookieBackend, str.Str>.ok(SqliteCookieBackend(db))
+    },    
+    serialize(sections: vec.Vec<cookie.CookieSection>) : bool {
+        // We still iterate and update all. Using INSERT OR REPLACE to handle upserts.
+        let now = time.Date.now().time.seconds
+        for (let i = 0; i < sections.length; i += 1) {
+            let section = sections[i]
+            let secure = 0
+            if (section.secure) { secure = 1 }
+            let http_only = 0
+            if (section.http_only) { http_only = 1 }
+            
+            // Unify Max-Age and Expires into local time (timestamp)
+            let expires_at = 0
+            if (section.max_age.time.seconds > 0) {
+                expires_at = now + section.max_age.time.seconds
+            } elif (section.expires.time.seconds > 0) {
+                expires_at = section.expires.time.seconds
+            } else {
+                // Persistent session cookie (30 days)
+                expires_at = now + 86400 * 30 
+            }
+
+            this.db.execute("INSERT OR REPLACE INTO cookies (key, value, domain, path, expires, max_age, expires_at, secure, http_only) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
+                section.key,
+                section.value,
+                section.domain,
+                section.path,
+                section.expires.time.seconds,
+                section.max_age.time.seconds,
+                expires_at,
+                secure,
+                http_only
+            )
+        }
+        return true
+    },    
+    deserialize() : vec.Vec<cookie.CookieSection> {
+        let sections = vec.Vec<cookie.CookieSection>()
+        let now = time.Date.now().time.seconds
+        let stmt_res = this.db.execute("SELECT * FROM cookies WHERE expires_at > ?;", now)
+        if (stmt_res.is_err()) {
+            return sections
+        }
+        
+        let stmt = stmt_res.unwrap()
+        let rows_res = stmt.fetch_all()
+        if (rows_res.is_err()) {
+            return sections
+        }
+        
+        let rows = rows_res.unwrap()
+        for (let i = 0; i < rows.length; i += 1) {
+            let row = rows[i]
+            let section = cookie.CookieSection()
+            
+            // Assume the values can be casted or are dynamically resolved
+            section.key = dyn_cast<str.Str>(row["key"])
+            section.value = dyn_cast<str.Str>(row["value"])
+            section.domain = dyn_cast<str.Str>(row["domain"])
+            section.path = dyn_cast<str.Str>(row["path"])
+            section.expires = time.Date.from_timestamp(dyn_cast<int>(row["expires"]))
+            section.max_age = time.Duration.seconds(dyn_cast<int>(row["max_age"]))
+            section.secure = dyn_cast<int>(row["secure"]) != 0
+            section.http_only = dyn_cast<int>(row["http_only"]) != 0
+            
+            sections.push(section)
+        }
+        return sections
+    }
+}
+
+impl SqliteCookieBackend : cookie.CookieBackend {
+    serialize(sections: vec.Vec<cookie.CookieSection>) : str.Str {
+        this.serialize(sections)
+        return ""
+    },
+    deserialize() : vec.Vec<cookie.CookieSection> {
+        return this.deserialize()
+    }
+}
