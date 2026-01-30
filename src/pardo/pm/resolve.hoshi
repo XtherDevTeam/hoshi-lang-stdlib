@@ -35,28 +35,42 @@ impl DefaultPackageSource : package.PackageSource {
         return this.name
     },
     query_package(name: str.Str) : lang.Result<package.PackageInformation, package.PackageSourceQueryResultCode> {
-        let resp = net.http.open("GET", str.format("{}/packages/{}/index", this.remote, name)).unwrap().send()
-        if (resp.is_err()) {
+        let resp_res = net.http.open("GET", str.format("{}/packages/{}/index", this.remote, name)).unwrap().send()
+        if (resp_res.is_err()) {
             return lang.Result<package.PackageInformation, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.NetworkError)
         }
-        if (resp.unwrap().status_code() != 200) {
+        let resp = resp_res.unwrap()
+        
+        let data_res = resp.text()
+        if (data_res.is_err()) {
             return lang.Result<package.PackageInformation, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.NetworkError)
         }
-        let data = resp.unwrap().text()
-        if (data.is_err()) {
-            return lang.Result<package.PackageInformation, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.NetworkError)
-        }
-        let manifest = json.parse(data.unwrap())
-        if (manifest.is_err()) {
+        
+        let json_res = json.parse(data_res.unwrap())
+        if (json_res.is_err()) {
             return lang.Result<package.PackageInformation, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.InvalidManifest)
         }
-        let body = dyn_cast<json.JSONDict>(manifest.unwrap())
+        
+        let body = dyn_cast<json.JSONDict>(json_res.unwrap())
         if (body == null) {
             return lang.Result<package.PackageInformation, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.InvalidManifest)
         }
-        if (body.contains("message") || body.contains("data") == false) {
+        
+        if (resp.status_code() != 200) {
+            if (resp.status_code() == 404) {
+                return lang.Result<package.PackageInformation, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.NotFound)
+            }
+            return lang.Result<package.PackageInformation, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.NetworkError)
+        }
+
+        if (body.contains("status") && dyn_cast<str.Str>(body["status"]) == "error") {
             return lang.Result<package.PackageInformation, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.NotFound)
         }
+
+        if (body.contains("data") == false) {
+            return lang.Result<package.PackageInformation, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.InvalidManifest)
+        }
+        
         let data = dyn_cast<json.JSONDict>(body["data"])
         if (data == null) {
             return lang.Result<package.PackageInformation, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.InvalidManifest)
@@ -68,28 +82,42 @@ impl DefaultPackageSource : package.PackageSource {
         return lang.Result<package.PackageInformation, package.PackageSourceQueryResultCode>.ok(package_info.unwrap())
     },
     query_package_manifest(name: str.Str, version: str.Str) : lang.Result<package.PackageManifest, package.PackageSourceQueryResultCode> {
-        let resp = net.http.open("GET", str.format("{}/packages/{}/manifest/{}", this.remote, name, version)).unwrap().send()
-        if (resp.is_err()) {
+        let resp_res = net.http.open("GET", str.format("{}/packages/{}/manifest/{}", this.remote, name, version)).unwrap().send()
+        if (resp_res.is_err()) {
             return lang.Result<package.PackageManifest, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.NetworkError)
         }
-        if (resp.unwrap().status_code() != 200) {
+        let resp = resp_res.unwrap()
+        
+        let data_res = resp.text()
+        if (data_res.is_err()) {
             return lang.Result<package.PackageManifest, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.NetworkError)
         }
-        let data = resp.unwrap().text()
-        if (data.is_err()) {
-            return lang.Result<package.PackageManifest, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.NetworkError)
-        }
-        let manifest = json.parse(data.unwrap())
-        if (manifest.is_err()) {
+        
+        let json_res = json.parse(data_res.unwrap())
+        if (json_res.is_err()) {
             return lang.Result<package.PackageManifest, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.InvalidManifest)
         }
-        let body = dyn_cast<json.JSONDict>(manifest.unwrap())
+        
+        let body = dyn_cast<json.JSONDict>(json_res.unwrap())
         if (body == null) {
             return lang.Result<package.PackageManifest, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.InvalidManifest)
         }
-        if (body.contains("message") || body.contains("data") == false) {
+        
+        if (resp.status_code() != 200) {
+            if (resp.status_code() == 404) {
+                return lang.Result<package.PackageManifest, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.NotFound)
+            }
+            return lang.Result<package.PackageManifest, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.NetworkError)
+        }
+
+        if (body.contains("status") && dyn_cast<str.Str>(body["status"]) == "error") {
             return lang.Result<package.PackageManifest, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.NotFound)
         }
+
+        if (body.contains("data") == false) {
+            return lang.Result<package.PackageManifest, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.InvalidManifest)
+        }
+        
         let data = dyn_cast<json.JSONDict>(body["data"])
         if (data == null) {
             return lang.Result<package.PackageManifest, package.PackageSourceQueryResultCode>.err(package.PackageSourceQueryResultCode.InvalidManifest)

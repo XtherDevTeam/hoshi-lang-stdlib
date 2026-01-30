@@ -73,6 +73,15 @@ func make_error_response(message: str.Str) : kiana.response.Response {
     )
 }
 
+func make_index_error_response(code: int, status_text: str.Str, message: str.Str) : kiana.response.Response {
+    return kiana.response.Response(
+        http.HTTPResponseHeader("HTTP/1.1", code, status_text),
+        json.JSONDict()
+            .put("status", str.Str("error"))
+            .put("message", message) as json.JSONValue
+    )
+}
+
 func get_current_user_id(req: kiana.request.Request) : lang.Result<int, str.Str> {
     if (req.headers.headers.contains("cookie") == false) {
         return lang.Result<int, str.Str>.err("missing cookie")
@@ -1130,10 +1139,10 @@ func route_artifact_remove(req: kiana.request.Request, params: hashMap.HashMap<s
 func route_index_package_info(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
     let name = params["name"]
     let [pkg, pkg_err] = data_provider.get_package_by_name(name)
-    if (pkg_err != null) { return make_error_response("not found") }
+    if (pkg_err != null) { return make_index_error_response(404, "Not Found", "package not found") }
 
     let [versions, v_err] = data_provider.get_package_versions(pkg.id)
-    if (v_err != null) { return make_error_response("failed to fetch versions") }
+    if (v_err != null) { return make_index_error_response(500, "Internal Server Error", "failed to fetch versions") }
 
     let versions_list = json.JSONList()
     for (let i = 0; i < versions.length; i += 1) {
@@ -1160,10 +1169,10 @@ func route_index_package_manifest(req: kiana.request.Request, params: hashMap.Ha
     let version_tag = params["version"]
 
     let [pkg, pkg_err] = data_provider.get_package_by_name(name)
-    if (pkg_err != null) { return make_error_response("not found") }
+    if (pkg_err != null) { return make_index_error_response(404, "Not Found", "package not found") }
 
     let [version, v_err] = data_provider.get_package_version(pkg.id, version_tag)
-    if (v_err != null) { return make_error_response("version not found") }
+    if (v_err != null) { return make_index_error_response(404, "Not Found", "version not found") }
 
     return kiana.response.Response(
         http.HTTPResponseHeader("HTTP/1.1", 200, "OK"),
@@ -1186,7 +1195,7 @@ func route_index_package_asset(req: kiana.request.Request, params: hashMap.HashM
     let version_tag = params["version"]
 
     let [pkg, pkg_err] = data_provider.get_package_by_name(name)
-    if (pkg_err != null) { return make_error_response("not found") }
+    if (pkg_err != null) { return make_index_error_response(404, "Not Found", "package not found") }
 
     let artifact_param = params["artifact"]
     let platform = str.Str("universal")
@@ -1203,15 +1212,15 @@ func route_index_package_asset(req: kiana.request.Request, params: hashMap.HashM
     }
 
     let query = data_provider.db.execute("select * from artifacts where package_id = ? and version = ? and platform = ? and arch = ?", pkg.id, version_tag, platform, arch)
-    if (query.is_err()) { return make_error_response("invalid query") }
+    if (query.is_err()) { return make_index_error_response(500, "Internal Server Error", "invalid query") }
     let [res, f_err] = query.unwrap().fetch_all()
     if (f_err != null || res.length == 0) { 
         // fallback to universal-universal
         query = data_provider.db.execute("select * from artifacts where package_id = ? and version = ? and platform = 'universal' and arch = 'universal'", pkg.id, version_tag)
-        if (query.is_err()) { return make_error_response("invalid query") }
+        if (query.is_err()) { return make_index_error_response(500, "Internal Server Error", "invalid query") }
         let [res_fb, f_err_fb] = query.unwrap().fetch_all()
         if (f_err_fb != null || res_fb.length == 0) {
-            return make_error_response("artifact not found") 
+            return make_index_error_response(404, "Not Found", "artifact not found") 
         }
         res = res_fb
     }
@@ -1220,7 +1229,7 @@ func route_index_package_asset(req: kiana.request.Request, params: hashMap.HashM
 
     let [f, file_err] = fs.open(artifact.destinations, "rb")
     if (file_err != null) {
-        return make_error_response("artifact file not found on server")
+        return make_index_error_response(404, "Not Found", "artifact file not found on server")
     }
 
     return kiana.response.Response(

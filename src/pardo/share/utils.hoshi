@@ -41,7 +41,7 @@ func save_stream(url: str.Str, filename: str.Str) : ResultCode {
         return ResultCode.RequestFail
     }
     let resp = req.unwrap().send()
-    if (resp.is_err()) {
+    if (resp.is_err() || resp.unwrap().status_code() != 200) {
         return ResultCode.RequestFail
     }
     let total = resp.unwrap().content_length()

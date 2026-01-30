@@ -67,49 +67,21 @@ impl BasePackageManager {
         [[arch == "amd64"]] arch = "amd64"
 
         let asset_url = source.query_asset_url(pkg_name, pkg_version, platform, arch)
+        let temp_zip = fs.Path.temp_dir() / str.format("pardo-{}.zip", runtime.runtime_random_legacy_unsigned())
         
-        let req_open = net.http.open("GET", asset_url)
-        if (req_open.is_err()) {
-            pkg_path.remove(true)
-            return lang.Result<bool, str.Str>.err(str.format("Failed to open HTTP request for {}", asset_url))
-        }
-
-        let resp_res = req_open.unwrap().send()
-        if (resp_res.is_err() || resp_res.unwrap().status_code() != 200) {
+        let save_res = github.utils.save_stream(asset_url, temp_zip.to_string())
+        if (save_res != github.utils.ResultCode.Success) {
             // Try fallback to universal
             asset_url = source.query_asset_url(pkg_name, pkg_version, "universal", "universal")
-            let req_open_fb = net.http.open("GET", asset_url)
-            if (req_open_fb.is_ok()) {
-                resp_res = req_open_fb.unwrap().send()
-            }
+            save_res = github.utils.save_stream(asset_url, temp_zip.to_string())
         }
         
-        if (resp_res.is_err() || resp_res.unwrap().status_code() != 200) {
+        if (save_res != github.utils.ResultCode.Success) {
             pkg_path.remove(true)
             return lang.Result<bool, str.Str>.err(str.format("Failed to download package asset for {}@{}", pkg_name, pkg_version))
         }
-        
-        let resp = resp_res.unwrap()
-        let reader = resp.reader()
-        
-        let temp_zip = fs.Path.temp_dir() / str.format("pardo-{}.zip", runtime.runtime_random_legacy_unsigned())
-        let f_zip_res = fs.open(temp_zip.to_string(), "wb")
-        if (f_zip_res.is_err()) {
-             pkg_path.remove(true)
-             return lang.Result<bool, str.Str>.err("Failed to create temporary zip file")
-        }
 
-        let f_zip = f_zip_res.unwrap()
-        let chunk_size = 65536
-        while (reader.is_eof() == false) {
-            let view = reader.read(chunk_size)
-            if (view.size > 0) {
-                f_zip.write(view.data)
-            } else {
-                break
-            }
-        }
-        f_zip.close()
+        // Extract
         
         // Extract
         let z_res = zip.open(temp_zip.to_string(), zip.CompressionLevel.Default, 'r')
