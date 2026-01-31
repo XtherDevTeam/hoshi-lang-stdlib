@@ -271,7 +271,7 @@ impl PardoRegistryRemote {
         // 5. Upload artifact
         console.print("Uploading artifact ", zip_name, " for ", platform, "/", arch, "...\n")
         
-        let [f, f_err] = fs.open(zip_path.to_string(), "r")
+        let [f, f_err] = fs.open(zip_path.to_string(), "rb")
         if (f_err != null) { return lang.Result<bool, str.Str>.err("Failed to open artifact: " + f_err as str.Str) }
         
         let form = http.FormData(vec.Vec<http.FormDataField>())

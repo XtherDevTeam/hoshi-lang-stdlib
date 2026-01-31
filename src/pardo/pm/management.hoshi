@@ -452,7 +452,7 @@ impl ProjectLocalPackageManager {
                     rel_path = filename
                 }
                 
-                let f_res = fs.open(entry_str, "r")
+                let f_res = fs.open(entry_str, "rb")
                 if (f_res.is_ok()) {
                     let f = f_res.unwrap()
                     let data = f.read(f.size())
@@ -464,7 +464,7 @@ impl ProjectLocalPackageManager {
                         z_entry.write(data.data)
                         z_entry.close()
                     } else {
-                        console.print(str.format("Warning: Failed to add {} to zip: {}\n", rel_path, entry_res.unwrap_err()))
+                        console.print(str.format("Warning: Failed to add {} to archive: {}\n", rel_path, entry_res.unwrap_err()))
                     }
                 }
             }
