@@ -149,9 +149,11 @@ impl BasePackageManager {
         for (let i = 0; i < keys.length; i += 1) {
             let bin_name = keys[i]
             let rel_path = dyn_cast<str.Str>(exposed_map[bin_name])
+            [[platform == "win32"]] let ext = ".exe"
+            [[platform != "win32"]] let ext = ""
             if (rel_path != null) {
                 let target_path = pkg_path / rel_path
-                let link_path = target_bin_dir / bin_name
+                let link_path = target_bin_dir / (bin_name + ext)
                 
                 if (target_path.exists()) {
                     // console.print(str.format("Linking binary {} to {}\n", bin_name, link_path.to_string()))
