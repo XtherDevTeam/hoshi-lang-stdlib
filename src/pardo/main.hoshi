@@ -7,6 +7,7 @@ use fs "fs"
 use json "json"
 use registry "pm/registry"
 use vec "vec"
+use types "share/types"
 
 func print_help(self: str.Str) : none {
     let help_msg = str.format("pardo package manager for hoshi-lang
@@ -95,7 +96,7 @@ func main() : int {
             print_help(argv[0])
             return 0
         } elif (arg == "--build-number") {
-            console.print("1\n")
+            console.print("{}\n", types.pardo_pm_build_number)
             return 0
         } elif (arg == "-g" || arg == "--global") {
             is_global = true

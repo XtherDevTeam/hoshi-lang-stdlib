@@ -306,7 +306,17 @@ impl BuildTarget {
                 let key = keys[i]
                 let val = defines_dict[key]
                 if (val interfaceof str.Str) {
-                    target.defines.put(key, dyn_cast<str.Str>(val))
+                    target.defines.put(key, str.format("\"{}\"", str.escape(dyn_cast<str.Str>(val))))
+                } elif (val interfaceof json.Numeric) {
+                    let num = dyn_cast<json.Numeric>(val)
+                    target.defines.put(key, num.data)
+                } elif (val interfaceof bool) {
+                    let bool_val = dyn_cast<bool>(val)
+                    if (bool_val) {
+                        target.defines.put(key, "true")
+                    } else {
+                        target.defines.put(key, "false")
+                    }
                 }
             }
         }

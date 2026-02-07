@@ -1,9 +1,0 @@
-use package "pardo/pm/package"
-use lang "builtin"
-use console "console"
-
-func main() : int {
-    let bm = package.BuildManifest()
-    console.print("Compiled successfully\n")
-    return 0
-}

@@ -2,6 +2,8 @@ use str "str"
 use vec "vec"
 use json "json"
 
+let pardo_pm_build_number = 2 // constant for pardo package manager build number
+
 enum Permission {
     Administrator = 0,
     User = 1

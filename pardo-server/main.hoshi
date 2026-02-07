@@ -1243,6 +1243,7 @@ func route_index_package_asset(req: kiana.request.Request, params: hashMap.HashM
 func main() : int {
     data_provider = dataProvider.DataProvider("blob/database.db")
     pcontext = context.PardoServerContext()
+    [[COLUMBINA == 1]] pcontext.logger.log("pardo-server official build")
     pcontext.logger.log("pardo-server started")
     pcontext.logger.log("checking database status")
     if (data_provider.check_if_initialized() == false) {
