@@ -159,7 +159,22 @@ impl PardoRegistryRemote {
                     .put("description", str.Str("A hoshi-lang package published via pardo publish") as json.JSONValue)
                     .put("repository", manifest.repository as json.JSONValue)
                     .put("license", manifest.license as json.JSONValue)
-                    .put("readme", str.Str("No readme provided") as json.JSONValue)
+                    .put("license", manifest.license as json.JSONValue)
+
+                let readme_str = str.Str("No readme provided")
+                let readme_path = fs.Path("README.md")
+                if (readme_path.exists()) {
+                    let [f_readme, err_readme] = fs.open(readme_path.to_string(), "r")
+                    if (err_readme == null) {
+                        f_readme.seek(0, 2)
+                        let f_size = f_readme.tell()
+                        f_readme.seek(0, 0)
+                        let buf = f_readme.read(f_size)
+                        readme_str = str.Str(buf.data)
+                        f_readme.close()
+                    }
+                }
+                create_payload.put("readme", readme_str as json.JSONValue)
                     
                 let create_res = this.process_response(this.send_request_with_body("POST", "/v1/package/add", create_payload as json.JSONValue))
                 if (create_res.is_err()) { return lang.Result<bool, str.Str>.err("Failed to create package: " + create_res.unwrap_err()) }

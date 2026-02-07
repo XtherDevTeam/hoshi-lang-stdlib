@@ -319,6 +319,38 @@ func route_user_info(req: kiana.request.Request, params: hashMap.HashMap<str.Str
     )
 }
 
+// /v1/user/update
+func route_user_update(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
+    let [user_id, id_err] = get_current_user_id(req)
+    if (id_err != null) { return make_error_response("not authenticated") }
+    let [user, u_err] = data_provider.get_user_by_id(user_id)
+    if (u_err != null) { return make_error_response("user not found") }
+
+    let [body_json, err] = req.json()
+    if (err != null) { return make_error_response("invalid request: error parsing json") }
+    let body = dyn_cast<json.JSONDict>(body_json)
+
+    let email = user.email
+    let description = user.description
+
+    if (body.contains("email")) {
+        email = dyn_cast<str.Str>(body["email"])
+    }
+    if (body.contains("description")) {
+        description = dyn_cast<str.Str>(body["description"])
+    }
+
+    if (data_provider.update_user(user.id, description, email, user.permission) != dataProvider.ResultCode.Success) {
+        return make_error_response("failed to update user profile")
+    }
+
+    return kiana.response.Response(
+        http.HTTPResponseHeader("HTTP/1.1", 200, "OK"),
+        json.JSONDict()
+            .put("status", str.Str("ok")) as json.JSONValue
+    )
+}
+
 // /v1/package/list
 func route_package_list(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
     let [packages, err] = data_provider.get_package_list()
@@ -1299,6 +1331,7 @@ func main() : int {
     application.use_route("/v1/user/profile/:id", func route_user_public_profile)
     application.use_route("/v1/user/avatar/upload", func route_user_avatar_upload)
     application.use_route("/v1/user/avatar/:id", func route_user_avatar_get)
+    application.use_route("/v1/user/update", func route_user_update)
 
 
     application.use_route("/index/packages/:name/index", func route_index_package_info)

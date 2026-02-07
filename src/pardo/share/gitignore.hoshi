@@ -1,0 +1,237 @@
+use str "str"
+use vec "vec"
+use lang "builtin"
+use fs "fs"
+
+enum GitignoreParserError {
+    None
+}
+
+struct GitignoreRule {
+    pattern: str.Str,
+    negate: bool,
+    dir_only: bool,
+    root_anchored: bool,
+    constructor(pattern: str.Str, negate: bool, dir_only: bool, root_anchored: bool)
+}
+
+impl GitignoreRule {
+    constructor(pattern: str.Str, negate: bool, dir_only: bool, root_anchored: bool) {
+        this.pattern = pattern
+        this.negate = negate
+        this.dir_only = dir_only
+        this.root_anchored = root_anchored
+    }
+}
+
+struct GitignoreParser {
+    rules: vec.Vec<GitignoreRule>,
+    constructor(rules: vec.Vec<GitignoreRule>),
+    static parse(rules: str.Str) : lang.Result<GitignoreParser, GitignoreParserError>,
+    can_satisfy(path: fs.Path) : bool,
+    static match_glob(pattern: str.Str, path: str.Str) : bool,
+    static match_recursive(pattern: str.Str, p_idx: int, path: str.Str, s_idx: int) : bool
+}
+
+impl GitignoreParser {
+    constructor(rules: vec.Vec<GitignoreRule>) {
+        this.rules = rules
+    },
+
+    static parse(rules: str.Str) : lang.Result<GitignoreParser, GitignoreParserError> {
+        let lines = rules.split("\n")
+        let parsed_rules = vec.Vec<GitignoreRule>()
+
+        for (let i = 0; i < lines.length; i += 1) {
+            let line = lines[i].trim()
+            
+            if (line.length == 0 || line.startswith("#")) {
+                continue
+            }
+
+            let negate = false
+            if (line.startswith("!")) {
+                negate = true
+                line = line.substring(1, line.length)
+            }
+
+            let dir_only = false
+            if (line.endswith("/")) {
+                dir_only = true
+                line = line.substring(0, line.length - 1)
+            }
+
+            let root_anchored = false
+            if (line.startswith("/")) {
+                root_anchored = true
+                line = line.substring(1, line.length)
+            }
+            // Also anchored if contains / in middle (not implemented for simplicity unless needed, standard says:
+            // "If the pattern ends with a slash, it is removed for the purpose of the following description, but it would only find a match with a directory. In other words, foo/ will match a directory foo and paths underneath it, but will not match a regular file or a symbolic link foo (this is consistent with the way how pathspec works in general in git)."
+            // "If the pattern does not contain a slash /, git treats it as a shell glob pattern and checks for a match against the pathname relative to the location of the .gitignore file (relative to the toplevel of the work tree if not from a .gitignore file)."
+            
+            if (line.find('/') != -1) {
+                root_anchored = true
+            }
+
+            parsed_rules.push(GitignoreRule(line, negate, dir_only, root_anchored))
+        }
+
+        return lang.Result<GitignoreParser, GitignoreParserError>.ok(GitignoreParser(parsed_rules))
+    },
+
+    can_satisfy(path: fs.Path) : bool {
+        let ignored = false
+        // fs.Path might use backslash on Windows, so we verify
+        let path_norm = path.to_string().replace("\\", "/")
+        if (path_norm.startswith("./")) {
+            path_norm = path_norm.substring(2, path_norm.length)
+        }
+
+        for (let i = 0; i < this.rules.length; i += 1) {
+            let rule = this.rules[i]
+            let match = false
+
+            if (rule.root_anchored) {
+                match = GitignoreParser.match_glob(rule.pattern, path_norm)
+                if (match == false && path_norm.startswith(rule.pattern + "/")) {
+                    match = true
+                }
+
+            } else {
+                
+                if (GitignoreParser.match_glob(rule.pattern, path_norm)) {
+                    match = true
+                } else {
+                    // Try to match basename
+                    let last_slash = path_norm.rfind('/')
+                    if (last_slash != -1) {
+                        let basename = path_norm.substring(last_slash + 1, path_norm.length)
+                        if (GitignoreParser.match_glob(rule.pattern, basename)) {
+                            match = true
+                        }
+                    }
+                }
+                
+                // Also check directories in path?
+                // if rule is "bin", and path is "bin/main", it should match.
+                // checking path parts.
+                if (match == false) {
+                    let parts = path_norm.split("/")
+                    for(let k = 0; k < parts.length; k += 1) {
+                        if (GitignoreParser.match_glob(rule.pattern, parts[k])) {
+                            match = true
+                            break
+                        }
+                    }
+                }
+            }
+
+            if (match) {
+                if (rule.negate) {
+                    ignored = false
+                } else {
+                    ignored = true
+                }
+            }
+        }
+        return ignored
+    },
+    static match_glob(pattern: str.Str, path: str.Str) : bool {
+        return GitignoreParser.match_recursive(pattern, 0, path, 0)
+    },
+    static match_recursive(pattern: str.Str, p_idx: int, path: str.Str, s_idx: int) : bool {
+        let p_len = pattern.length
+        let s_len = path.length
+
+        while (p_idx < p_len && s_idx < s_len) {
+            if (pattern[p_idx] == '*') {
+                // Check for double star
+                if (p_idx + 1 < p_len && pattern[p_idx + 1] == '*') {
+                    // ** matches zero or more characters including /
+                    p_idx += 2
+                    // Skip following slash if present (**/foo matches foo)
+                    if (p_idx < p_len && pattern[p_idx] == '/') {
+                        p_idx += 1
+                        // If pattern ends with ** or **/, it matches everything
+                        if (p_idx == p_len) { return true }
+                    }
+                    
+                    if (p_idx == p_len) { return true } // Trailing ** matches everything
+
+                    // Try to find next part of pattern in string
+                    // This is brute force recursive.
+                    // Try matching remainder of pattern at every position of string
+                    for (let i = s_idx; i <= s_len; i += 1) {
+                        if (GitignoreParser.match_recursive(pattern, p_idx, path, i)) {
+                            return true
+                        }
+                    }
+                    return false
+                } else {
+                    // * matches zero or more characters EXCEPT /
+                    p_idx += 1
+                    // Try matching * with empty string
+                    if (GitignoreParser.match_recursive(pattern, p_idx, path, s_idx)) { return true }
+                    
+                    // Match * with 1+ chars, but stop at /
+                    for (let i = s_idx; i < s_len; i += 1) {
+                        if (path[i] == '/') { break }
+                        if (GitignoreParser.match_recursive(pattern, p_idx, path, i + 1)) { return true }
+                    }
+                    return false
+                }
+            } elif (pattern[p_idx] == '?') {
+                // ? matches exactly one char except /
+                if (path[s_idx] == '/') { return false }
+                p_idx += 1
+                s_idx += 1
+            } elif (pattern[p_idx] == '[') {
+                // Simple character class [abc] or [a-z] can be complex, skipping full implementation for brevity
+                // unless required. Assuming strict literal or simple matching.
+                // Let's implement partial support: find ']'
+                let closing = pattern.find(']', p_idx)
+                if (closing != -1) {
+                    let match = false
+                    let char_to_check = path[s_idx]
+                    // Iterate content of []
+                    for(let k = p_idx + 1; k < closing; k+=1) {
+                        if (pattern[k] == char_to_check) {
+                            match = true
+                            break
+                        }
+                        // Range support a-z?
+                        if (k + 2 < closing && pattern[k+1] == '-') {
+                            if (char_to_check >= pattern[k] && char_to_check <= pattern[k+2]) {
+                                match = true
+                                break
+                            }
+                            k += 2
+                        }
+                    }
+                    if (match == false) { return false }
+                    p_idx = closing + 1
+                    s_idx += 1
+                } else {
+                    // No closing ], treat as literal [
+                    if (pattern[p_idx] != path[s_idx]) { return false }
+                    p_idx += 1
+                    s_idx += 1
+                }
+            } else {
+                if (pattern[p_idx] != path[s_idx]) {
+                    return false
+                }
+                p_idx += 1
+                s_idx += 1
+            }
+        }
+
+        // Handle trailing * in pattern
+        while (p_idx < p_len && pattern[p_idx] == '*') {
+            p_idx += 1
+        }
+        
+        return p_idx == p_len && s_idx == s_len
+    }
+}

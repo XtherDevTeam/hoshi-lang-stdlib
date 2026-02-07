@@ -13,6 +13,7 @@ use zip "zip"
 use net "net"
 use runtime "runtime"
 use github "pardo/install/github"
+use gitignore "pardo/share/gitignore"
 
 struct BasePackageManager {
     root_path: fs.Path,
@@ -211,7 +212,7 @@ struct ProjectLocalPackageManager {
     prune(manifest: package.PackageManifest, source: package.PackageSource) : lang.Result<bool, str.Str>,
     build(manifest: package.PackageManifest, build_manifest: package.BuildManifest) : lang.Result<bool, str.Str>,
     package(manifest: package.PackageManifest, build_manifest: package.BuildManifest) : lang.Result<bool, str.Str>,
-    recursive_zip(z_file: zip.ZipFile, current_path: fs.Path, root_path: fs.Path, zip_name: str.Str) : bool
+    recursive_zip(z_file: zip.ZipFile, current_path: fs.Path, root_path: fs.Path, zip_name: str.Str, ignore_parser: gitignore.GitignoreParser) : bool
 }
 
 impl ProjectLocalPackageManager {
@@ -418,7 +419,25 @@ impl ProjectLocalPackageManager {
         let z_file = z_res.unwrap()
         
         let project_root = fs.Path.current_dir()
-        this.recursive_zip(z_file, project_root, project_root, zip_name)
+        
+        let ignore_parser = gitignore.GitignoreParser(vec.Vec<gitignore.GitignoreRule>())
+        let gitignore_path = project_root / ".pardoignore"
+        if (gitignore_path.exists()) {
+            let f_res = fs.open(gitignore_path.to_string(), "r")
+            if (f_res.is_ok()) {
+                let f = f_res.unwrap()
+                let content = f.read(f.size())
+                f.close()
+                let parse_res = gitignore.GitignoreParser.parse(str.Str(content.data))
+                if (parse_res.is_ok()) {
+                    ignore_parser = parse_res.unwrap()
+                } else {
+                    console.print(str.format("Warning: Failed to parse .pardoignore: {}\n", "Unknown error"))
+                }
+            }
+        }
+
+        this.recursive_zip(z_file, project_root, project_root, zip_name, ignore_parser)
         
         z_file.close()
 
@@ -428,7 +447,7 @@ impl ProjectLocalPackageManager {
 
         return lang.Result<bool, str.Str>.ok(true)
     },
-    recursive_zip(z_file: zip.ZipFile, current_path: fs.Path, root_path: fs.Path, zip_name: str.Str) : bool {
+    recursive_zip(z_file: zip.ZipFile, current_path: fs.Path, root_path: fs.Path, zip_name: str.Str, ignore_parser: gitignore.GitignoreParser) : bool {
         let entries = current_path.listdir()
         for (let i = 0; i < entries.length; i += 1) {
             let entry = entries[i]
@@ -439,8 +458,9 @@ impl ProjectLocalPackageManager {
                 continue
             }
             
+            
             if (entry.is_directory()) {
-                this.recursive_zip(z_file, entry, root_path, zip_name)
+                this.recursive_zip(z_file, entry, root_path, zip_name, ignore_parser)
             } elif (entry.is_file()) {
                 let entry_str = entry.to_string()
                 let root_str = root_path.to_string()
@@ -454,6 +474,10 @@ impl ProjectLocalPackageManager {
                     }
                 } else {
                     rel_path = filename
+                }
+
+                if (ignore_parser.can_satisfy(fs.Path(rel_path))) {
+                    continue
                 }
                 
                 let f_res = fs.open(entry_str, "rb")
