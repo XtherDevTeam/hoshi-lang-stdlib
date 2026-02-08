@@ -139,7 +139,7 @@ impl DataProvider {
         return result.is_err() == false
     },
     add_user(username: str.Str, password: str.Str) : ResultCode {
-        let salted = str.format("{}:pardo-server", password)
+        let salted = str.format("{}:tsuki-server", password)
         let salted_md5 = crypto.hash.Hash.md5().feed(salted.data, salted.length).final().hexdigest()
         let query = this.db.execute("insert into users (username, password_salted, avatar_path, avatar_mime) values (?,?, ?, ?)", username, salted_md5, str.Str("template/default_avatar.jpg"), str.Str("image/jpeg"))
         if (query.is_err()) {
@@ -148,7 +148,7 @@ impl DataProvider {
         return ResultCode.Success        
     },
     auth_user(username: str.Str, password: str.Str) : lang.Result<int, ResultCode> {
-        let salted = str.format("{}:pardo-server", password)
+        let salted = str.format("{}:tsuki-server", password)
         let salted_md5 = crypto.hash.Hash.md5().feed(salted.data, salted.length).final().hexdigest()
         let query = this.db.execute("select id from users where username = ? and password_salted = ?", username, salted_md5)
         if (query.is_err()) {
@@ -163,7 +163,7 @@ impl DataProvider {
         }
     },
     update_user_password(id: int, new_password: str.Str) : ResultCode {
-        let salted = str.format("{}:pardo-server", new_password)
+        let salted = str.format("{}:tsuki-server", new_password)
         let salted_md5 = crypto.hash.Hash.md5().feed(salted.data, salted.length).final().hexdigest()
         let query = this.db.execute("update users set password_salted = ? where id = ?", salted_md5, id)
         if (query.is_err()) {

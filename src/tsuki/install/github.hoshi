@@ -466,7 +466,7 @@ func updater(version: str.Str, force: bool) : int {
     }
 
     [[platform != "win32"]] os.chmod(dest_dir + "/bin/hoshi_lang", 0o755)
-    [[platform != "win32"]] os.chmod(dest_dir + "/bin/pardo", 0o755)
+    [[platform != "win32"]] os.chmod(dest_dir + "/bin/tsuki", 0o755)
 
     console.print(str.format("Successfully updated hoshi-lang installation at {}\n", dest_dir))
     backup_dir.remove(true)

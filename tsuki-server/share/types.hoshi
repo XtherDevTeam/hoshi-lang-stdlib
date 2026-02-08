@@ -48,39 +48,39 @@ impl Config {
     }
 }
 
-struct PardoJWTClaims {
+struct TsukiJWTClaims {
     user: int,
     exp: int,
     constructor(user: int, exp: int),
     constructor(),
-    set_user(user: int) : PardoJWTClaims,
-    set_exp(exp: int) : PardoJWTClaims,
-    static from_json(v: json.JSONDict) : PardoJWTClaims,
+    set_user(user: int) : TsukiJWTClaims,
+    set_exp(exp: int) : TsukiJWTClaims,
+    static from_json(v: json.JSONDict) : TsukiJWTClaims,
     to_json(): json.JSONDict
 }
 
-impl PardoJWTClaims {
+impl TsukiJWTClaims {
     constructor(user: int, exp: int) {
         this.user = user
         this.exp = exp
     },
     constructor() {
     },
-    set_user(user: int) : PardoJWTClaims {
+    set_user(user: int) : TsukiJWTClaims {
         this.user = user
         return this
     },
-    set_exp(exp: int) : PardoJWTClaims {
+    set_exp(exp: int) : TsukiJWTClaims {
         this.exp = exp
         return this
     },
-    static from_json(v: json.JSONDict) : PardoJWTClaims {
+    static from_json(v: json.JSONDict) : TsukiJWTClaims {
         let user = dyn_cast<json.Numeric>(v["user"])
         let exp = dyn_cast<json.Numeric>(v["exp"])
         if (user == null || exp == null) {
             return null
         }
-        return PardoJWTClaims(user.getInt(), exp.getInt())
+        return TsukiJWTClaims(user.getInt(), exp.getInt())
     },
     to_json() : json.JSONDict {
         return json.JSONDict()

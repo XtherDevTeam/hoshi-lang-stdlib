@@ -1,4 +1,4 @@
-use pardo "pardo"
+use tsuki "tsuki"
 use str "str"
 use hashMap "hashMap"
 use lang "builtin"
@@ -10,18 +10,18 @@ use vec "vec"
 use types "share/types"
 
 func print_help(self: str.Str) : none {
-    let help_msg = str.format("pardo package manager for hoshi-lang
+    let help_msg = str.format("tsuki package manager for hoshi-lang
 Made with love by Jerry Chou (This project is licensed under the MIT License)
 
 Usage: {} <command> [options] [args]
 
 Commands:
-  init           Initialize a new pardo.json and build.json manifest
-  install        Install dependencies from pardo.json
-  remove         Remove an installed package and update pardo.json
+  init           Initialize a new tsuki.json and build.json manifest
+  install        Install dependencies from tsuki.json
+  remove         Remove an installed package and update tsuki.json
   build          Build targets specified in build.json
   package        Build and package the current project into a zip artifact
-  update         Update hoshi-lang and pardo installations
+  update         Update hoshi-lang and tsuki installations
   
 Remote Management:
   login          Authenticate with a remote registry
@@ -33,55 +33,55 @@ Options:
   -h, --help      Show help message
   -g, --global    Use global package manager
   -r, --registry  Specify package registry URL
-  --build-number  Print the build number of pardo
+  --build-number  Print the build number of tsuki
 ", self)
     console.print(help_msg)
 }
 
-func load_pardo_manifest() : lang.Result<pardo.pm.package.PackageManifest, str.Str> {
-    let manifest_path = "pardo.json"
+func load_tsuki_manifest() : lang.Result<tsuki.pm.package.PackageManifest, str.Str> {
+    let manifest_path = "tsuki.json"
     if (fs.Path(manifest_path).exists() == false) {
-        return lang.Result<pardo.pm.package.PackageManifest, str.Str>.err("pardo.json not found")
+        return lang.Result<tsuki.pm.package.PackageManifest, str.Str>.err("tsuki.json not found")
     }
     
     let f_res = fs.open(manifest_path, "r")
     if (f_res.is_err()) {
-        return lang.Result<pardo.pm.package.PackageManifest, str.Str>.err("Could not open pardo.json")
+        return lang.Result<tsuki.pm.package.PackageManifest, str.Str>.err("Could not open tsuki.json")
     }
     let f = f_res.unwrap()
     let data = f.read(f.size())
     let json_res = json.parse(str.Str(data.data))
     if (json_res.is_err()) {
-        return lang.Result<pardo.pm.package.PackageManifest, str.Str>.err("Failed to parse pardo.json")
+        return lang.Result<tsuki.pm.package.PackageManifest, str.Str>.err("Failed to parse tsuki.json")
     }
-    return pardo.pm.package.PackageManifest.from_json(json_res.unwrap())
+    return tsuki.pm.package.PackageManifest.from_json(json_res.unwrap())
 }
 
-func load_build_manifest() : lang.Result<pardo.pm.package.BuildManifest, str.Str> {
+func load_build_manifest() : lang.Result<tsuki.pm.package.BuildManifest, str.Str> {
     let manifest_path = "build.json"
     if (fs.Path(manifest_path).exists() == false) {
-        return lang.Result<pardo.pm.package.BuildManifest, str.Str>.ok(pardo.pm.package.BuildManifest())
+        return lang.Result<tsuki.pm.package.BuildManifest, str.Str>.ok(tsuki.pm.package.BuildManifest())
     }
     
     let f_res = fs.open(manifest_path, "r")
     if (f_res.is_err()) {
-        return lang.Result<pardo.pm.package.BuildManifest, str.Str>.err("Could not open build.json")
+        return lang.Result<tsuki.pm.package.BuildManifest, str.Str>.err("Could not open build.json")
     }
     let f = f_res.unwrap()
     let data = f.read(f.size())
     let json_res = json.parse(str.Str(data.data))
     if (json_res.is_err()) {
-        return lang.Result<pardo.pm.package.BuildManifest, str.Str>.ok(pardo.pm.package.BuildManifest())
+        return lang.Result<tsuki.pm.package.BuildManifest, str.Str>.ok(tsuki.pm.package.BuildManifest())
     }
-    return pardo.pm.package.BuildManifest.from_json(json_res.unwrap())
+    return tsuki.pm.package.BuildManifest.from_json(json_res.unwrap())
 }
 
 func main() : int {
     let argv = lang.argv()
     
-    if (pardo.install.github.detect_existing_hoshi_installation() == "") {
+    if (tsuki.install.github.detect_existing_hoshi_installation() == "") {
         console.print("No existing hoshi installation found. Running setup...\n")
-        pardo.install.github.installer("", "")
+        tsuki.install.github.installer("", "")
     }
 
     let is_global = false
@@ -96,7 +96,7 @@ func main() : int {
             print_help(argv[0])
             return 0
         } elif (arg == "--build-number") {
-            console.print("{}\n", types.pardo_pm_build_number)
+            console.print("{}\n", types.tsuki_pm_build_number)
             return 0
         } elif (arg == "-g" || arg == "--global") {
             is_global = true
@@ -117,11 +117,11 @@ func main() : int {
         return 0
     }
 
-    let pm : pardo.pm.instance.PackageManagementBackend = null
+    let pm : tsuki.pm.instance.PackageManagementBackend = null
     if (is_global) {
-        pm = pardo.pm.management.GlobalPackageManager()
+        pm = tsuki.pm.management.GlobalPackageManager()
     } else {
-        pm = pardo.pm.management.ProjectLocalPackageManager()
+        pm = tsuki.pm.management.ProjectLocalPackageManager()
     }
 
     if (command == "init") {
@@ -141,17 +141,17 @@ func main() : int {
         let pkg_to_install : str.Str = ""
         if (args.length > 0) { pkg_to_install = args[0] }
 
-        let source_impl = pardo.pm.resolve.DefaultPackageSource()
+        let source_impl = tsuki.pm.resolve.DefaultPackageSource()
         if (registry_url != "") {
             source_impl.set_remote(registry_url)
         }
-        let source : pardo.pm.package.PackageSource = source_impl
+        let source : tsuki.pm.package.PackageSource = source_impl
 
-        let manifest : pardo.pm.package.PackageManifest = null
+        let manifest : tsuki.pm.package.PackageManifest = null
         if (is_global) {
-            manifest = pardo.pm.package.PackageManifest("global-install", "1.0.0", "", "", "", hashMap.HashMap<str.Str, str.Str>())
+            manifest = tsuki.pm.package.PackageManifest("global-install", "1.0.0", "", "", "", hashMap.HashMap<str.Str, str.Str>())
         } else {
-            let manifest_res = load_pardo_manifest()
+            let manifest_res = load_tsuki_manifest()
             if (manifest_res.is_err()) {
                 console.print(str.format("Error: {}\n", manifest_res.unwrap_err()))
                 return 1
@@ -203,13 +203,13 @@ func main() : int {
         }
         let pkg_to_remove = args[0]
 
-        let manifest : pardo.pm.package.PackageManifest = null
+        let manifest : tsuki.pm.package.PackageManifest = null
         if (is_global == false) {
-            let manifest_res = load_pardo_manifest()
+            let manifest_res = load_tsuki_manifest()
             if (manifest_res.is_ok()) {
                 manifest = manifest_res.unwrap()
             } else {
-                console.print("Error: unable to load pardo.json\n")
+                console.print("Error: unable to load tsuki.json\n")
                 return 1
             }
         }
@@ -223,7 +223,7 @@ func main() : int {
     }
 
     if (command == "build" || command == "package") {
-        let manifest_res = load_pardo_manifest()
+        let manifest_res = load_tsuki_manifest()
         if (manifest_res.is_err()) {
             console.print(str.format("Error: {}\n", manifest_res.unwrap_err()))
             return 1
@@ -250,11 +250,11 @@ func main() : int {
     }
 
     // Remote Specific Commands
-    let remote = registry.PardoRegistryRemote(registry_url)
+    let remote = registry.TsukiRegistryRemote(registry_url)
 
     if (command == "login") {
         if (args.length < 2) {
-            console.print("Usage: pardo login <username> <password>\n")
+            console.print("Usage: tsuki login <username> <password>\n")
             return 1
         }
         let result = remote.login(args[0], args[1])
@@ -289,7 +289,7 @@ func main() : int {
     }
 
     if (command == "publish") {
-        let manifest_res = load_pardo_manifest()
+        let manifest_res = load_tsuki_manifest()
         if (manifest_res.is_err()) {
             console.print("Error loading manifest: ", manifest_res.unwrap_err(), "\n")
             return 1
@@ -330,7 +330,7 @@ func main() : int {
                 force = true
             }
         }
-        return pardo.install.github.updater(version, force)
+        return tsuki.install.github.updater(version, force)
     }
 
     console.print(str.format("Unknown command: {}\n", command))

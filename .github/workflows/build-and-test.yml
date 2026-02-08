@@ -79,15 +79,15 @@ jobs:
         run: 
           make package
 
-      - name: Build pardo package manager
+      - name: Build tsuki package manager
         env:
           CC: clang
           CXX: clang++
           LLVM_DIR: ${{ env.LLVM_PATH }}/lib/cmake/llvm
         shell: bash
         run: |
-          ./build-package/bin/hoshi_lang ./src/pardo/main.hoshi -o build-package/bin/pardo -I src --build-mode release
-          ./build-package/bin/hoshi_lang ./src/pardo/update.hoshi -o build-package/bin/pardo-update -I src --build-mode release
+          ./build-package/bin/hoshi_lang ./src/tsuki/main.hoshi -o build-package/bin/tsuki -I src --build-mode release
+          ./build-package/bin/hoshi_lang ./src/tsuki/update.hoshi -o build-package/bin/tsuki-update -I src --build-mode release
 
       - name: Upload hoshi-lang artifacts
         uses: actions/upload-artifact@v4
@@ -103,8 +103,8 @@ jobs:
           # Naming artifacts distinctly to ensure easier collection later
           name: hoshi-lang-installer-${{ matrix.os == 'ubuntu-latest' && 'linux' || 'darwin' }}
           path: |
-            build-package/bin/pardo
-            build-package/bin/pardo-update
+            build-package/bin/tsuki
+            build-package/bin/tsuki-update
 
   build-windows:
     runs-on: windows-latest
@@ -185,7 +185,7 @@ jobs:
         run: make package
         shell: bash
 
-      - name: Build pardo package manager
+      - name: Build tsuki package manager
         if: matrix.toolchain == 'clang'
         env:
           CC: clang
@@ -193,8 +193,8 @@ jobs:
           LLVM_DIR: ${{ env.LLVM_PATH }}/lib/cmake/llvm
         shell: bash
         run: |
-          ./build-package/bin/hoshi_lang.exe ./src/pardo/main.hoshi -o build-package/bin/pardo.exe -I src --build-mode release
-          ./build-package/bin/hoshi_lang.exe ./src/pardo/update.hoshi -o build-package/bin/pardo-update.exe -I src --build-mode release
+          ./build-package/bin/hoshi_lang.exe ./src/tsuki/main.hoshi -o build-package/bin/tsuki.exe -I src --build-mode release
+          ./build-package/bin/hoshi_lang.exe ./src/tsuki/update.hoshi -o build-package/bin/tsuki-update.exe -I src --build-mode release
 
       - name: Upload hoshi-lang artifacts
         uses: actions/upload-artifact@v4
@@ -209,8 +209,8 @@ jobs:
         with:
           name: hoshi-lang-installer-windows
           path: |
-            build-package/bin/pardo.exe
-            build-package/bin/pardo-update.exe
+            build-package/bin/tsuki.exe
+            build-package/bin/tsuki-update.exe
 
   # New job to handle release creation
   create-release:

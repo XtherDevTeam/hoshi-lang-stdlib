@@ -2,10 +2,10 @@ use str "str"
 use lang "builtin"
 use console "console"
 use vec "vec"
-use pardo "pardo"
+use tsuki "tsuki"
 
 func print_help(self: str.Str) : none {
-    let help_msg = str.format("pardo-update tool for hoshi-lang
+    let help_msg = str.format("tsuki-update tool for hoshi-lang
 Usage: {} [options]
 
 Options:
@@ -40,5 +40,5 @@ func main() : int {
         }
     }
 
-    return pardo.install.github.updater(version, force)
+    return tsuki.install.github.updater(version, force)
 }

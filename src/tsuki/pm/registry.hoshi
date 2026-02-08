@@ -5,7 +5,7 @@ use str "str"
 use fs "fs"
 use vec "vec"
 use lang "builtin"
-use types "pardo/share/types"
+use types "tsuki/share/types"
 use console "console"
 use hashMap "hashMap"
 use uri "net/uri"
@@ -14,7 +14,7 @@ use sqlite_backend "net/sqlite_cookie_backend"
 use package "pm/package"
 use install "install"
 
-struct PardoRegistryRemote {
+struct TsukiRegistryRemote {
     registry_url: str.Str,
     jar: cookie.Cookies,
     constructor(registry_url: str.Str),
@@ -30,7 +30,7 @@ struct PardoRegistryRemote {
     process_response(resp_res: lang.Result<http.HTTPResponse, str.Str>) : lang.Result<json.JSONValue, str.Str>
 }
 
-impl PardoRegistryRemote {
+impl TsukiRegistryRemote {
     constructor(registry_url: str.Str) {
         this.registry_url = registry_url
         if (this.registry_url.endswith("/")) {
@@ -50,9 +50,9 @@ impl PardoRegistryRemote {
     get_cookie_path() : str.Str {
         let hoshi_home = install.github.detect_existing_hoshi_installation()
         if (hoshi_home == "") {
-            return "pardo-cli.cookies.db" // Fallback to current dir
+            return "tsuki-cli.cookies.db" // Fallback to current dir
         }
-        return str.Stringable(fs.Path(hoshi_home) / "pardo-cli.cookies.db").to_string()
+        return str.Stringable(fs.Path(hoshi_home) / "tsuki-cli.cookies.db").to_string()
     },
     
     send_request_with_body(method: str.Str, path: str.Str, body: http.HTTPRequestBody) : lang.Result<http.HTTPResponse, str.Str> {
@@ -156,7 +156,7 @@ impl PardoRegistryRemote {
                 console.print("Package '", manifest.name, "' not found. Creating...\n")
                 let create_payload = json.JSONDict()
                     .put("name", manifest.name as json.JSONValue)
-                    .put("description", str.Str("A hoshi-lang package published via pardo publish") as json.JSONValue)
+                    .put("description", str.Str("A hoshi-lang package published via tsuki publish") as json.JSONValue)
                     .put("repository", manifest.repository as json.JSONValue)
                     .put("license", manifest.license as json.JSONValue)
                     .put("license", manifest.license as json.JSONValue)

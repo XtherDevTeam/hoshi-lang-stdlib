@@ -12,8 +12,8 @@ use os "os"
 use zip "zip"
 use net "net"
 use runtime "runtime"
-use github "pardo/install/github"
-use gitignore "pardo/share/gitignore"
+use github "tsuki/install/github"
+use gitignore "tsuki/share/gitignore"
 
 struct BasePackageManager {
     root_path: fs.Path,
@@ -68,7 +68,7 @@ impl BasePackageManager {
         [[arch == "amd64"]] arch = "amd64"
 
         let asset_url = source.query_asset_url(pkg_name, pkg_version, platform, arch)
-        let temp_zip = fs.Path.temp_dir() / str.format("pardo-{}.zip", runtime.runtime_random_legacy_unsigned())
+        let temp_zip = fs.Path.temp_dir() / str.format("tsuki-{}.zip", runtime.runtime_random_legacy_unsigned())
         
         let save_res = github.utils.save_stream(asset_url, temp_zip.to_string())
         if (save_res != github.utils.ResultCode.Success) {
@@ -217,14 +217,14 @@ struct ProjectLocalPackageManager {
 
 impl ProjectLocalPackageManager {
     constructor() {
-        this.root_path = fs.Path.current_dir() / ".pardo_modules"
+        this.root_path = fs.Path.current_dir() / ".tsuki_modules"
     },
     save_manifest(manifest: package.PackageManifest) : lang.Result<bool, str.Str> {
         let manifest_val = manifest.to_json()
         let manifest_str = manifest_val.to_string()
-        let f = fs.open("pardo.json", "w")
+        let f = fs.open("tsuki.json", "w")
         if (f.is_err()) {
-            return lang.Result<bool, str.Str>.err("Failed to open pardo.json for writing")
+            return lang.Result<bool, str.Str>.err("Failed to open tsuki.json for writing")
         }
         f.unwrap().write(manifest_str.data)
         f.unwrap().close()
@@ -286,8 +286,12 @@ impl ProjectLocalPackageManager {
     },
     build(manifest: package.PackageManifest, build_manifest: package.BuildManifest) : lang.Result<bool, str.Str> {
         let bin_dir = fs.Path.current_dir() / "bin"
+        let project_cache = fs.Path.current_dir() / ".tsuki_cache"
         if (bin_dir.exists() == false) {
             bin_dir.mkdir(true)
+        }
+        if (project_cache.exists() == false) {
+            project_cache.mkdir(true)
         }
 
         let hoshi_lang_exec : str.Str = "hoshi_lang"
@@ -313,16 +317,16 @@ impl ProjectLocalPackageManager {
             console.print(str.format("Building target: {}...\n", name))
             
             let output_path = bin_dir / target.filename
+            let cache_path = project_cache / target.filename
+
             let cmd = str.format("{} -o {} ", hoshi_lang_exec, output_path.to_string())
             
-            if (target.type == "static-lib") {
-                cmd = cmd + "--build-type static-lib "
-            } elif (target.type == "shared-lib") {
-                cmd = cmd + "--build-type shared-lib "
+            if (target.type == "library") {
+                cmd += "--build-type library "
             }
             
             if (target.flags.length > 0) {
-                cmd = cmd + target.flags + " "
+                cmd += target.flags + " "
             }
             
             let defines_keys = target.defines.keys()
@@ -330,14 +334,15 @@ impl ProjectLocalPackageManager {
                 let d_key = defines_keys[j]
                 let d_val = target.defines[d_key]
                 if (d_val.find(' ') != -1) {
-                    cmd = cmd + str.format("-D {} \"{}\" ", d_key, d_val)
+                    cmd += str.format("-D {} \"{}\" ", d_key, str.escape(d_val))
                 } else {
-                    cmd = cmd + str.format("-D {} {} ", d_key, d_val)
+                    cmd += str.format("-D {} {} ", d_key, d_val)
                 }
             }
             
             // Use specified sourcefile
-            cmd = cmd + target.sourcefile + " -I src"
+            cmd += str.format("\"{}\"", str.escape(target.sourcefile))
+            cmd += str.format(" -C \"{}\"", str.escape(cache_path.to_string()))
             
             console.print(str.format("Running command: {}\n", cmd))
             let exit_code = os.system(cmd)
@@ -421,7 +426,7 @@ impl ProjectLocalPackageManager {
         let project_root = fs.Path.current_dir()
         
         let ignore_parser = gitignore.GitignoreParser(vec.Vec<gitignore.GitignoreRule>())
-        let gitignore_path = project_root / ".pardoignore"
+        let gitignore_path = project_root / ".tsuki_ignore"
         if (gitignore_path.exists()) {
             let f_res = fs.open(gitignore_path.to_string(), "r")
             if (f_res.is_ok()) {
@@ -432,7 +437,7 @@ impl ProjectLocalPackageManager {
                 if (parse_res.is_ok()) {
                     ignore_parser = parse_res.unwrap()
                 } else {
-                    console.print(str.format("Warning: Failed to parse .pardoignore: {}\n", "Unknown error"))
+                    console.print(str.format("Warning: Failed to parse .tsuki_ignore: {}\n", "Unknown error"))
                 }
             }
         }
@@ -453,8 +458,8 @@ impl ProjectLocalPackageManager {
             let entry = entries[i]
             let filename = entry.filename()
             
-            // Skip .pardo_modules, .git, .DS_Store and the zip file itself
-            if (filename == ".pardo_modules" || filename == ".git" || filename == ".DS_Store" || filename == zip_name) {
+            // Skip .tsuki_modules, .git, .DS_Store and the zip file itself
+            if (filename == ".tsuki_modules" || filename == ".git" || filename == ".DS_Store" || filename == zip_name) {
                 continue
             }
             
@@ -529,7 +534,7 @@ impl ProjectLocalPackageManager : instance.PackageManagementBackend {
                 return install_res
             }
 
-            let pkg_modules_dir = this.root_path / str.format("{}@{}", name, ver_str) / ".pardo_modules"
+            let pkg_modules_dir = this.root_path / str.format("{}@{}", name, ver_str) / ".tsuki_modules"
             base.ensure_modules_dir(pkg_modules_dir)
 
             let deps_keys = sub_manifest.dependencies.keys()
@@ -626,7 +631,7 @@ impl GlobalPackageManager {
         if (hoshi_home != "") {
             this.root_path = fs.Path(hoshi_home) / "packages"
         } else {
-            this.root_path = fs.Path.home_dir() / ".pardo" / "packages"
+            this.root_path = fs.Path.home_dir() / ".tsuki" / "packages"
         }
     }
 }
@@ -667,7 +672,7 @@ impl GlobalPackageManager : instance.PackageManagementBackend {
                 if (hoshi_home != "") {
                     global_bin_dir = fs.Path(hoshi_home) / "bin"
                 } else {
-                    global_bin_dir = fs.Path.home_dir() / ".pardo" / "bin"
+                    global_bin_dir = fs.Path.home_dir() / ".tsuki" / "bin"
                 }
                 base.link_exposed_binaries(pkg_path, global_bin_dir)
             }
@@ -688,7 +693,7 @@ impl GlobalPackageManager : instance.PackageManagementBackend {
                 if (hoshi_home != "") {
                     global_bin_dir = fs.Path(hoshi_home) / "bin"
                 } else {
-                    global_bin_dir = fs.Path.home_dir() / ".pardo" / "bin"
+                    global_bin_dir = fs.Path.home_dir() / ".tsuki" / "bin"
                 }
                 
                 let pkg_path = this.root_path / filename

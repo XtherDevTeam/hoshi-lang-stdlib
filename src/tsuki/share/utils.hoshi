@@ -8,20 +8,20 @@ use runtime "runtime"
 use progress "progress"
 use logger "logger"
 
-struct _PardoShareContext {
+struct _TsukiShareContext {
     logger: logger.Logger,
     progress_bars: progress.ProgressBars,
     constructor()
 }
 
-impl _PardoShareContext {
+impl _TsukiShareContext {
     constructor() {
         this.logger = logger.ConsoleLogger(logger.Severity.INFO)
         this.progress_bars = progress.ProgressBars(30)
     }
 }
 
-let share_context = _PardoShareContext()
+let share_context = _TsukiShareContext()
 
 enum BufferSize {
     Default = 1048576

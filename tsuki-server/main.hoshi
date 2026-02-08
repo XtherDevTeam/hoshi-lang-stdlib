@@ -17,7 +17,7 @@ use vec "vec"
 use crypto "crypto"
 use lang "builtin"
 
-let pcontext : context.PardoServerContext = null
+let pcontext : context.TsukiServerContext = null
 let application : kiana.application.Application = null
 let data_provider : dataProvider.DataProvider = null
 let public_routes = hashMap.HashMap<str.Str, str.Str>()
@@ -87,14 +87,14 @@ func get_current_user_id(req: kiana.request.Request) : lang.Result<int, str.Str>
         return lang.Result<int, str.Str>.err("missing cookie")
     }
     let cookie = kiana.cookie.parse(req.headers.headers["cookie"])
-    if (cookie == null || cookie.get("pardo_session") == null || cookie.get("pardo_session").trim() == "") {
+    if (cookie == null || cookie.get("tsuki_session") == null || cookie.get("tsuki_session").trim() == "") {
         return lang.Result<int, str.Str>.err("missing session")
     }
-    let [token, err] = jwt.extract_payload(jwt.parse(cookie.get("pardo_session")).unwrap(), jwt.HMACSHA256(pcontext.config.secret_key))
+    let [token, err] = jwt.extract_payload(jwt.parse(cookie.get("tsuki_session")).unwrap(), jwt.HMACSHA256(pcontext.config.secret_key))
     if (err != null) {
         return lang.Result<int, str.Str>.err("invalid token")
     }
-    let jwtoken = types.PardoJWTClaims.from_json(token)
+    let jwtoken = types.TsukiJWTClaims.from_json(token)
     return lang.Result<int, str.Str>.ok(jwtoken.user)
 }
 
@@ -103,7 +103,7 @@ func route_root(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str
     return kiana.response.Response(
         http.HTTPResponseHeader("HTTP/1.1", 200, "OK"),
         json.JSONDict()
-            .put("server", str.Str("pardo-package-manager-remote-server"))
+            .put("server", str.Str("tsuki-package-manager-remote-server"))
             .put("api", json.Numeric(1))
             .put("status", str.Str("ok")) as json.JSONValue
     )
@@ -125,14 +125,14 @@ func post_authentication(req: kiana.request.Request) : lang.Result<kiana.request
             return lang.Result<kiana.request.Request, kiana.response.Response>.err(make_error_response("not authenticated: missing cookie header"))
         }
         let cookie = kiana.cookie.parse(req.headers.headers["cookie"])
-        if (cookie == null || cookie.get("pardo_session") == null || cookie.get("pardo_session").trim() == "") {
-            return lang.Result<kiana.request.Request, kiana.response.Response>.err(make_error_response("not authenticated: error parsing cookie header or missing pardo_session cookie"))
+        if (cookie == null || cookie.get("tsuki_session") == null || cookie.get("tsuki_session").trim() == "") {
+            return lang.Result<kiana.request.Request, kiana.response.Response>.err(make_error_response("not authenticated: error parsing cookie header or missing tsuki_session cookie"))
         }
-        let [token, err] = jwt.extract_payload(jwt.parse(cookie.get("pardo_session")).unwrap(), jwt.HMACSHA256(pcontext.config.secret_key))
+        let [token, err] = jwt.extract_payload(jwt.parse(cookie.get("tsuki_session")).unwrap(), jwt.HMACSHA256(pcontext.config.secret_key))
         if (err != null) {
             return lang.Result<kiana.request.Request, kiana.response.Response>.err(make_error_response("not authenticated: invalid session payload"))
         }
-        let jwtoken = types.PardoJWTClaims.from_json(token)
+        let jwtoken = types.TsukiJWTClaims.from_json(token)
         let [user, err] = data_provider.get_user_by_id(jwtoken.user)
         if (err != null) {
             return lang.Result<kiana.request.Request, kiana.response.Response>.err(make_error_response("invalid user"))
@@ -263,11 +263,11 @@ func route_login(req: kiana.request.Request, params: hashMap.HashMap<str.Str, st
     }
 
     let session = jwt.JWTBuilder(jwt.HMACSHA256(pcontext.config.secret_key))
-        .set_claim(types.PardoJWTClaims(user_id, 0).to_json())
+        .set_claim(types.TsukiJWTClaims(user_id, 0).to_json())
         .yield()
 
     let cookie = kiana.cookie.Cookie()
-        .put("pardo_session", str.Stringable(session).to_string())
+        .put("tsuki_session", str.Stringable(session).to_string())
         .path("/")
         .http_only(true)
         .max_age(time.Duration.days(30))
@@ -283,7 +283,7 @@ func route_login(req: kiana.request.Request, params: hashMap.HashMap<str.Str, st
 // /v1/user/logout
 func route_logout(req: kiana.request.Request, params: hashMap.HashMap<str.Str, str.Str>) : kiana.response.Response {
     let cookie = kiana.cookie.Cookie()
-        .put("pardo_session", "")
+        .put("tsuki_session", "")
         .path("/")
         .http_only(true)
 
@@ -1274,9 +1274,9 @@ func route_index_package_asset(req: kiana.request.Request, params: hashMap.HashM
 
 func main() : int {
     data_provider = dataProvider.DataProvider("blob/database.db")
-    pcontext = context.PardoServerContext()
-    [[COLUMBINA == 1]] pcontext.logger.log("pardo-server official build")
-    pcontext.logger.log("pardo-server started")
+    pcontext = context.TsukiServerContext()
+    [[COLUMBINA == 1]] pcontext.logger.log("tsuki-server official build")
+    pcontext.logger.log("tsuki-server started")
     pcontext.logger.log("checking database status")
     if (data_provider.check_if_initialized() == false) {
         pcontext.logger.warn("database not initialized, initializing...")

@@ -2,7 +2,7 @@
     "license": "MIT",
     "repository": "",
     "author": "Jerry Chou",
-    "name": "pardo-server",
+    "name": "tsuki-server",
     "version": "0.1.0",
     "dependencies": {}
 }

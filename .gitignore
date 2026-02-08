@@ -5,8 +5,9 @@ test
 .vscode
 *.log
 *.db
-pardo-server/pardo-server*
-!pardo-server/blob/artifacts/.gitkeep
-pardo-server/blob/artifacts/*
-.pardo_modules
+tsuki-server/tsuki-server*
+!tsuki-server/blob/artifacts/.gitkeep
+tsuki-server/blob/artifacts/*
+.tsuki_modules
 bin
+.tsuki_cache

@@ -1,8 +1,8 @@
 {
     "targets": {
-        "pardo": {
+        "tsuki": {
             "flags": "-I ..",
-            "filename": "pardo",
+            "filename": "tsuki",
             "arch": "universal",
             "sourcefile": "main.hoshi",
             "defines": {},
@@ -10,9 +10,9 @@
             "platform": "universal",
             "type": "binary"
         },
-        "pardo-update": {
+        "tsuki-update": {
             "flags": "-I ..",
-            "filename": "pardo-update",
+            "filename": "tsuki-update",
             "arch": "universal",
             "sourcefile": "update.hoshi",
             "defines": {},
