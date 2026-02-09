@@ -1,7 +1,7 @@
 {
     "targets": {
         "tsuki": {
-            "flags": "-I ..",
+            "flags": "-I .. --build-mode release",
             "filename": "tsuki",
             "arch": "universal",
             "sourcefile": "main.hoshi",
@@ -11,7 +11,7 @@
             "type": "binary"
         },
         "tsuki-update": {
-            "flags": "-I ..",
+            "flags": "-I .. --build-mode release",
             "filename": "tsuki-update",
             "arch": "universal",
             "sourcefile": "update.hoshi",
@@ -21,6 +21,6 @@
             "type": "binary"
         }
     },
-    "minimum_hoshi_build": 53,
+    "minimum_hoshi_build": 76,
     "minimum_pm_version": 1
 }
