@@ -9,8 +9,8 @@ use lang "builtin"
 
 struct Cookie {
     sections: hashMap.HashMap<str.Str, str.Str>,
-    section_secure: bool,
-    section_http_only: bool,
+    datafield section_secure: bool,
+    datafield section_http_only: bool,
     constructor(),
     constructor(sections: hashMap.HashMap<str.Str, str.Str>),
     put(key: str.Str, value: str.Str) : Cookie,
@@ -135,8 +135,8 @@ struct CookieSection {
     path: str.Str,
     expires: time.Date,
     max_age: time.Duration,
-    secure: bool,
-    http_only: bool,
+    datafield secure: bool,
+    datafield http_only: bool,
     constructor(),
     constructor(key: str.Str, value: str.Str, domain: str.Str, path: str.Str, expires: time.Date, max_age: time.Duration, secure: bool, http_only: bool),
     expires(e: time.Date) : CookieSection,

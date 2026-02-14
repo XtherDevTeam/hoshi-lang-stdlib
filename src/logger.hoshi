@@ -18,7 +18,7 @@ interface Logger {
 }
 
 struct ConsoleLogger {
-    level: Severity,
+    datafield level: Severity,
     constructor(level: Severity)
 }
 

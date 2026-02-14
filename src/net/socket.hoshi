@@ -45,9 +45,9 @@ import libnet_ssl_error_message(code: int32) : ptr from "builtin"
 import libnet_ssl_clear_error() : none from "builtin"
 
 struct Socket {
-    fd: unsigned,
-    send_flag: int,
-    recv_flag: int,
+    datafield fd: unsigned,
+    datafield send_flag: int,
+    datafield recv_flag: int,
     constructor(),
     constructor(fd: unsigned, send_flag: int, recv_flag: int),
     finalizer(),
@@ -143,10 +143,10 @@ func socket() : lang.Result<Socket, ResultCode> {
 }
 
 struct SSLSocket {
-    fd: unsigned,
-    ssl_fd: unsigned,
-    send_flag: int,
-    recv_flag: int,
+    datafield fd: unsigned,
+    datafield ssl_fd: unsigned,
+    datafield send_flag: int,
+    datafield recv_flag: int,
     verify_domain: str.Str,
     constructor(),
     constructor(fd: unsigned, send_flag: int, recv_flag: int),

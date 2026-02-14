@@ -25,7 +25,7 @@ alias AfterRequestHook = func(response.Response) : lang.Result<response.Response
 
 struct ApplicationConfig {
     host: str.Str,
-    port: short,
+    datafield port: short,
     route: route.RouteTree,
     before_requests: vec.Vec<BeforeRequestHook>,
     after_requests: vec.Vec<AfterRequestHook>,
@@ -110,6 +110,9 @@ impl Application {
         this.config.add_route(path, handler)
     },
     serve() : ResultCode {
+        if (this.backend.init() == false) {
+            return ResultCode.SOCKET_CREATION_FAIL
+        }
         let sock = socket.socket()
         if (sock.is_err()) {
             return ResultCode.SOCKET_CREATION_FAIL

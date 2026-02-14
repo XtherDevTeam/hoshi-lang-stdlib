@@ -1,0 +1,125 @@
+use taskBackend "kiana/taskBackend"
+use request "kiana/request"
+use response "kiana/response"
+use socket "net/socket"
+use threading "threading"
+use vec "vec"
+use lang "builtin"
+
+struct PoolTask {
+    sock: socket.AbstractSocket,
+    resp_func: func() : response.Response,
+    constructor(sock: socket.AbstractSocket, resp_func: func() : response.Response)
+}
+
+impl PoolTask {
+    constructor(sock: socket.AbstractSocket, resp_func: func() : response.Response) {
+        this.sock = sock
+        this.resp_func = resp_func
+    }
+}
+
+struct TaskPoolBackend {
+    thread_count: int,
+    tasks: vec.Vec<PoolTask>,
+    head: int,
+    mutex: threading.Mutex,
+    condition: threading.Condition,
+    workers: vec.Vec<threading.Thread>,
+    stop_flag: bool,
+    constructor(),
+    constructor(thread_count: int),
+    worker_loop() : none
+}
+
+impl TaskPoolBackend {
+    constructor() {
+        this.thread_count = threading.hardware_concurrency()
+        this.tasks = vec.Vec<PoolTask>()
+        this.head = 0
+        this.mutex = threading.Mutex()
+        this.condition = threading.Condition(this.mutex)
+        this.workers = vec.Vec<threading.Thread>()
+        this.stop_flag = false
+    },
+    constructor(thread_count: int) {
+        this.thread_count = thread_count
+        this.tasks = vec.Vec<PoolTask>()
+        this.head = 0
+        this.mutex = threading.Mutex()
+        this.condition = threading.Condition(this.mutex)
+        this.workers = vec.Vec<threading.Thread>()
+        this.stop_flag = false
+    },
+    worker_loop() : none {
+        while (true) {
+            let task_opt : PoolTask = null
+            
+            this.mutex.lock()
+            while (this.stop_flag == false && this.head == this.tasks.length) {
+                this.condition.wait()
+            }
+
+            if (this.stop_flag && this.head == this.tasks.length) {
+                this.mutex.unlock()
+                return
+            }
+
+            task_opt = this.tasks[this.head]
+            this.head += 1
+            
+            if (this.head == this.tasks.length) {
+                this.tasks.length = 0
+                this.head = 0
+            }
+            
+            this.mutex.unlock()
+
+            // Execute task
+            if (task_opt != null) {
+                task_opt.resp_func().write_to(task_opt.sock)
+                task_opt.sock.close()
+            }
+        }
+    }
+}
+
+impl TaskPoolBackend : taskBackend.TaskBackend {
+    init() : bool {
+        for (let i = 0; i < this.thread_count; i += 1) {
+            let thread = threading.Thread(func[this]() : none {
+                this.this.worker_loop()
+            })
+            if (thread.start().is_err()) {
+                return false
+            }
+            this.workers.push(thread)
+        }
+        return true
+    },
+
+    new_task(sock: socket.AbstractSocket, resp : func() : response.Response) : none {
+        this.mutex.lock()
+        this.tasks.push(PoolTask(sock, resp))
+        this.condition.signal()
+        this.mutex.unlock()
+    },
+
+    stop() : none {
+        this.mutex.lock()
+        this.stop_flag = true
+        this.condition.signal() // Might need notify_all if kiana supported it, but signal in a loop/multiple times
+        this.mutex.unlock()
+        
+        // Signal everyone
+        for (let i = 0; i < this.workers.length; i += 1) {
+            this.mutex.lock()
+            this.condition.signal()
+            this.mutex.unlock()
+        }
+
+        for (let i = 0; i < this.workers.length; i += 1) {
+            this.workers[i].join()
+        }
+    }
+}

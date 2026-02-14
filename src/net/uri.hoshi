@@ -9,7 +9,7 @@ use math "math"
 struct URL {
     protocol: str.Str,
     host: str.Str,
-    port: short,
+    datafield port: short,
     target: str.Str,
     constructor(protocol: str.Str, host: str.Str, port: short, target: str.Str),
     to_string() : str.Str

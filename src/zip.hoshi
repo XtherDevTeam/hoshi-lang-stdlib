@@ -105,13 +105,13 @@ import zip_entry_noallocreadwithoffset(zip_file: unsigned, offset: int, bufsize:
 import zip_entry_write(zip_file: unsigned, buf: ptr, nbytes: unsigned) : int32 from "builtin"
 
 struct ZipFileEntry {
-    zip_fp: unsigned,
+    datafield zip_fp: unsigned,
     name: str.Str,
-    size: int,
-    is_directory: bool,
-    crc32: unsigned,
-    entry_index: int,
-    read_offset: int,
+    datafield size: int,
+    datafield is_directory: bool,
+    datafield crc32: unsigned,
+    datafield entry_index: int,
+    datafield read_offset: int,
     constructor(zip_fp: unsigned),
     next() : bool,
     read(buf: char[]) : lang.Result<int, str.Str>,
@@ -166,7 +166,7 @@ impl ZipFileEntry {
 }
 
 struct ZipFile {
-    zip_fp: unsigned,
+    datafield zip_fp: unsigned,
     entry_singleton: ZipFileEntry,
     constructor(zip_fp: unsigned),
     finalizer(),

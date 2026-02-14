@@ -124,9 +124,9 @@ impl str.Str : SQLBindable {
 }
 
 struct Statement {
-    pDB: unsigned,
-    pStmt: unsigned,
-    rc: ResultCode,
+    datafield pDB: unsigned,
+    datafield pStmt: unsigned,
+    datafield rc: ResultCode,
     preflight() : none,
     fetch() : lang.Result<SQLRowResult, ResultCode>,
     fetch_all() : lang.Result<vec.Vec<SQLRowResult>, ResultCode>,
@@ -212,7 +212,7 @@ impl Statement {
 }
 
 struct Database {
-    handle: unsigned,
+    datafield handle: unsigned,
     begin() : lang.Result<bool, ResultCode>,
     commit() : lang.Result<bool, ResultCode>,
     rollback() : lang.Result<bool, ResultCode>,
@@ -334,8 +334,8 @@ struct DatabaseConnectionPool {
     connections: DatabaseConnection,
     lock: threading.Mutex,
     is_empty: threading.Condition,
-    max_connections: int,
-    current_connections: int,
+    datafield max_connections: int,
+    datafield current_connections: int,
     constructor(uri: str.Str),
     get(): lang.Result<Database, ResultCode>,
     release(db: Database) : none

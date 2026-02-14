@@ -15,8 +15,8 @@ impl ThreadingBackend {
 }
 
 impl ThreadingBackend : taskBackend.TaskBackend {
-    init() : none {
-        return
+    init() : bool {
+        return true
     },
     new_task(sock: socket.AbstractSocket, resp : func() : response.Response) : none {
         threading.Thread(func [sock, resp] () : none {

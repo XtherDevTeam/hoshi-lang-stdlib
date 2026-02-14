@@ -9,9 +9,9 @@ enum GitignoreParserError {
 
 struct GitignoreRule {
     pattern: str.Str,
-    negate: bool,
-    dir_only: bool,
-    root_anchored: bool,
+    datafield negate: bool,
+    datafield dir_only: bool,
+    datafield root_anchored: bool,
     constructor(pattern: str.Str, negate: bool, dir_only: bool, root_anchored: bool)
 }
 

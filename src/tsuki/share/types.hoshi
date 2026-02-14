@@ -10,11 +10,11 @@ enum Permission {
 }
 
 struct User {
-    id: int,
+    datafield id: int,
     username: str.Str,
     description: str.Str,
     email: str.Str,
-    permission: int,
+    datafield permission: int,
     constructor(id: int, username: str.Str, description: str.Str, email: str.Str, permission: int),
     static from_json(v: json.JSONValue) : User,
     to_json(): json.JSONValue
@@ -60,8 +60,8 @@ impl User {
 }
 
 struct PackageVersion {
-    id: int,
-    package_id: int,
+    datafield id: int,
+    datafield package_id: int,
     tag_name: str.Str,
     revision_notes: str.Str,
     artifacts: json.JSONList,
@@ -120,7 +120,7 @@ impl PackageVersion {
 }
 
 struct PackageInformation {
-    id: int,
+    datafield id: int,
     name: str.Str,
     author: str.Str,
     description: str.Str,
@@ -180,8 +180,8 @@ impl PackageInformation {
 }
 
 struct Artifact {
-    id: int,
-    package_id: int,
+    datafield id: int,
+    datafield package_id: int,
     unique_id: str.Str,
     version: str.Str,
     filename: str.Str,

@@ -14,8 +14,8 @@ impl LegacyBackend {
 }
 
 impl LegacyBackend : taskBackend.TaskBackend {
-    init() : none {
-        return
+    init() : bool {
+        return true
     },
     new_task(sock: socket.AbstractSocket, resp : func() : response.Response) : none {
         resp().write_to(sock)

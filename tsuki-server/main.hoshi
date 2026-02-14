@@ -16,6 +16,7 @@ use types "share/types"
 use vec "vec"
 use crypto "crypto"
 use lang "builtin"
+use pool "kiana/backends/taskpool"
 
 let pcontext : context.TsukiServerContext = null
 let application : kiana.application.Application = null
@@ -1300,7 +1301,8 @@ func main() : int {
     }
     pcontext.logger.log("config loaded")
     application = kiana.application.Application(
-        kiana.application.ApplicationConfig(config.host, config.port)
+        kiana.application.ApplicationConfig(config.host, config.port),
+        pool.TaskPoolBackend()
     )
     application.logger = pcontext.logger
     application.use_before_request(func post_authentication)

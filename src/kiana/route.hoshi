@@ -32,7 +32,7 @@ struct RouteTree {
     node_type: RouteTreeNodeType,
     matching_pattern: str.Str,
     handler: RouteHandler,
-    is_end: bool,
+    datafield is_end: bool,
     full_path: str.Str,
     
     constructor(pattern: str.Str, node_type: RouteTreeNodeType),
