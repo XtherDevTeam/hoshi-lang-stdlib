@@ -96,7 +96,7 @@ func main() : int {
             print_help(argv[0])
             return 0
         } elif (arg == "--build-number") {
-            console.print("{}\n", types.tsuki_pm_build_number)
+            console.print(types.tsuki_pm_build_number)
             return 0
         } elif (arg == "-g" || arg == "--global") {
             is_global = true
