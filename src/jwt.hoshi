@@ -101,7 +101,7 @@ struct JWTBuilder {
     constructor(alg : JWTHashAlgorithm),
     add_claim(name : str.Str, value : json.JSONValue) : JWTBuilder,
     set_claim(claims: json.JSONDict) : JWTBuilder,
-    yield() : JWT
+    build() : JWT
 }
 
 impl JWTBuilder {
@@ -123,7 +123,7 @@ impl JWTBuilder {
         this.payload[name] = value
         return this
     },
-    yield() : JWT {
+    build() : JWT {
         let headers = json.JSONDict().put("typ", this.typ).put("alg", this.alg.algName())
         let headers_str = base64.encodeURI(json.JSONValue(headers).to_string())
         let payload_str = base64.encodeURI(json.JSONValue(this.payload).to_string())

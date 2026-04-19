@@ -265,7 +265,7 @@ func route_login(req: kiana.request.Request, params: hashMap.HashMap<str.Str, st
 
     let session = jwt.JWTBuilder(jwt.HMACSHA256(pcontext.config.secret_key))
         .set_claim(types.TsukiJWTClaims(user_id, 0).to_json())
-        .yield()
+        .build()
 
     let cookie = kiana.cookie.Cookie()
         .put("tsuki_session", str.Stringable(session).to_string())

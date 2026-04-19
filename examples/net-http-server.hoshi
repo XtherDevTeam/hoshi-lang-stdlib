@@ -69,7 +69,7 @@ func jwt_cookie_set(req: kiana.request.Request, params: hashMap.HashMap<str.Str,
     let session = jwt.JWTBuilder(jwt.HMACSHA256("kiana"))
         .add_claim("valkeryie", str.Str("Kiana Kaslana"))
         .add_claim("host_time", str.Stringable(time.Date.now() + time.Duration.timezone()).to_string())
-        .yield()
+        .build()()
     let cookie = kiana.cookie.Cookie()
         .put("session_token", str.Stringable(session).to_string())
         .path("/")

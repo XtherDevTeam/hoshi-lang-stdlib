@@ -226,7 +226,7 @@ impl ProjectLocalPackageManager {
         if (f.is_err()) {
             return lang.Result<bool, str.Str>.err("Failed to open tsuki.json for writing")
         }
-        f.unwrap().write(manifest_str.data)
+        f.unwrap().write(manifest_str.data, manifest_str.length)
         f.unwrap().close()
         return lang.Result<bool, str.Str>.ok(true)
     },
@@ -237,7 +237,7 @@ impl ProjectLocalPackageManager {
         if (f.is_err()) {
             return lang.Result<bool, str.Str>.err("Failed to open build.json for writing")
         }
-        f.unwrap().write(manifest_str.data)
+        f.unwrap().write(manifest_str.data, manifest_str.length)
         f.unwrap().close()
         return lang.Result<bool, str.Str>.ok(true)
     },

@@ -5,7 +5,7 @@ use console "console"
 func main() : int {
     let token = jwt.JWTBuilder(jwt.HMACSHA256("secret"))
         .add_claim("name", str.Str("Jerry Chou"))
-        .yield()
+        .build()()
     
     console.print(token, "\n")
 
