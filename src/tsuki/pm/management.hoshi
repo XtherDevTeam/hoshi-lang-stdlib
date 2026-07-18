@@ -528,14 +528,14 @@ impl ProjectLocalPackageManager {
                 }
             }
 
-            // Add native linker flags as --linker-option (-L)
-            for (let j = 0; j < native_acc.link_flags.length; j += 1) {
-                cmd += str.format("--linker-option {} ", native_acc.link_flags[j])
-            }
-
-            // Add native library paths as --linker-option
+            // Add native library paths first
             for (let j = 0; j < native_acc.libraries.length; j += 1) {
                 cmd += str.format("--linker-option {} ", native_acc.libraries[j])
+            }
+
+            // Add native linker flags second
+            for (let j = 0; j < native_acc.link_flags.length; j += 1) {
+                cmd += str.format("--linker-option {} ", native_acc.link_flags[j])
             }
 
             // Use specified sourcefile
