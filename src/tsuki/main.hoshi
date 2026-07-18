@@ -149,7 +149,7 @@ func main() : int {
 
         let manifest : tsuki.pm.package.PackageManifest = null
         if (is_global) {
-            manifest = tsuki.pm.package.PackageManifest("global-install", "1.0.0", "", "", "", hashMap.HashMap<str.Str, str.Str>())
+            manifest = tsuki.pm.package.PackageManifest("global-install", "1.0.0", "", "", "", hashMap.HashMap<str.Str, str.Str>(), tsuki.pm.package.NativeConfig())
         } else {
             let manifest_res = load_tsuki_manifest()
             if (manifest_res.is_err()) {

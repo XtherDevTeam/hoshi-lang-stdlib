@@ -22,7 +22,10 @@ struct BasePackageManager {
     flatten_install(manifest: package.PackageManifest, source: package.PackageSource) : lang.Result<bool, str.Str>,
     create_symlink(link: fs.Path, target: fs.Path) : bool,
     link_exposed_binaries(pkg_path: fs.Path, target_bin_dir: fs.Path) : lang.Result<bool, str.Str>,
-    unlink_exposed_binaries(pkg_path: fs.Path, target_bin_dir: fs.Path) : lang.Result<bool, str.Str>
+    unlink_exposed_binaries(pkg_path: fs.Path, target_bin_dir: fs.Path) : lang.Result<bool, str.Str>,
+    accumulate_native_flags(ctx: resolve.PackageResolveContext, root_manifest: package.PackageManifest, platform: str.Str) : package.NativeAccumulation,
+    accumulate_native_for_package(pkg_name: str.Str, ctx: resolve.PackageResolveContext, acc: package.NativeAccumulation, visited: hashMap.HashMap<str.Str, bool>, platform: str.Str) : none,
+    accumulate_native_from_path(pkg_path: fs.Path, acc: package.NativeAccumulation, visited: hashMap.HashMap<str.Str, bool>, platform: str.Str) : none
 }
 
 impl BasePackageManager {
@@ -201,6 +204,113 @@ impl BasePackageManager {
         }
 
         return lang.Result<bool, str.Str>.ok(true)
+    },
+    accumulate_native_flags(ctx: resolve.PackageResolveContext, root_manifest: package.PackageManifest, platform: str.Str) : package.NativeAccumulation {
+        let acc = package.NativeAccumulation()
+        let visited = hashMap.HashMap<str.Str, bool>()
+
+        let deps = root_manifest.dependencies.keys()
+        for (let i = 0; i < deps.length; i += 1) {
+            this.accumulate_native_for_package(deps[i], ctx, acc, visited, platform)
+        }
+
+        acc.add_platform_config(root_manifest.native.get_for_platform(platform))
+
+        return acc
+    },
+    accumulate_native_for_package(pkg_name: str.Str, ctx: resolve.PackageResolveContext, acc: package.NativeAccumulation, visited: hashMap.HashMap<str.Str, bool>, platform: str.Str) : none {
+        if (visited.contains(pkg_name)) {
+            return
+        }
+        visited.put(pkg_name, true)
+
+        let ver = ctx.get_resolved_version(pkg_name)
+        if (ver == null) {
+            return
+        }
+
+        let ver_str = str.Stringable(ver).to_string()
+        let pkg_dir_name = str.format("{}@{}", pkg_name, ver_str)
+        let pkg_path = this.root_path / pkg_dir_name
+
+        if (pkg_path.exists() == false) {
+            return
+        }
+
+        this.accumulate_native_from_path(pkg_path, acc, visited, platform)
+    },
+    accumulate_native_from_path(pkg_path: fs.Path, acc: package.NativeAccumulation, visited: hashMap.HashMap<str.Str, bool>, platform: str.Str) : none {
+        let manifest_path = pkg_path / "tsuki.json"
+        if (manifest_path.exists() == false) {
+            return
+        }
+
+        let f_res = fs.open(manifest_path.to_string(), "r")
+        if (f_res.is_err()) {
+            return
+        }
+        let f = f_res.unwrap()
+        let data = f.read(f.size())
+        f.close()
+
+        let json_res = json.parse(str.Str(data.data))
+        if (json_res.is_err()) {
+            return
+        }
+
+        let manifest_res = package.PackageManifest.from_json(json_res.unwrap())
+        if (manifest_res.is_err()) {
+            return
+        }
+        let manifest = manifest_res.unwrap()
+
+        // Recurse into dependencies first (deps before parent)
+        let deps = manifest.dependencies.keys()
+        for (let i = 0; i < deps.length; i += 1) {
+            let dep_name = deps[i]
+            if (visited.contains(dep_name)) {
+                continue
+            }
+            visited.put(dep_name, true)
+
+            // Find installed version via symlink
+            let dep_link = this.root_path / dep_name
+            let dep_pkg_path : fs.Path = null
+            if (dep_link.exists()) {
+                dep_pkg_path = dep_link
+            } else {
+                // Try to find by scanning for name@version directories
+                let entries = this.root_path.listdir()
+                for (let k = 0; k < entries.length; k += 1) {
+                    let entry_name = entries[k].filename()
+                    if (entry_name.startswith(dep_name + "@")) {
+                        dep_pkg_path = this.root_path / entry_name
+                        break
+                    }
+                }
+            }
+
+            if (dep_pkg_path != null && dep_pkg_path.exists()) {
+                this.accumulate_native_from_path(dep_pkg_path, acc, visited, platform)
+            }
+        }
+
+        // Add this package's native config with paths resolved relative to package root
+        let platform_config = manifest.native.get_for_platform(platform)
+        let resolved_config = package.NativePlatformConfig()
+
+        for (let i = 0; i < platform_config.libraries.length; i += 1) {
+            let lib_path = pkg_path / platform_config.libraries[i]
+            resolved_config.libraries.push(lib_path.to_string())
+        }
+        for (let i = 0; i < platform_config.link_flags.length; i += 1) {
+            resolved_config.link_flags.push(platform_config.link_flags[i])
+        }
+        for (let i = 0; i < platform_config.compile_flags.length; i += 1) {
+            resolved_config.compile_flags.push(platform_config.compile_flags[i])
+        }
+
+        acc.add_platform_config(resolved_config)
     }
 }
 
@@ -309,26 +419,90 @@ impl ProjectLocalPackageManager {
             return lang.Result<bool, str.Str>.err(str.format("hoshi_lang build number {} is less than minimum required {}", hoshi_build_num, build_manifest.minimum_hoshi_build))
         }
 
+        // Detect current platform for native flag accumulation
+        let platform : str.Str = "universal"
+        if (build_manifest.targets.size() != 0) {
+            let universal = true
+            let targets = build_manifest.targets.keys()
+            for (let i = 0; i < targets.length; i += 1) {
+                let target = build_manifest.targets[targets[i]]
+                if (target.platform != "universal" || target.arch != "universal") {
+                    platform = target.platform
+                    universal = false
+                    break
+                }
+            }
+            if (universal) {
+                [[platform == "darwin"]] platform = "darwin"
+                [[platform == "linux"]] platform = "linux"
+                [[platform == "win32"]] platform = "win32"
+                [[platform == "unknown"]] platform = "unknown"
+            }
+        }
+
+        // Accumulate native flags from the dependency tree
+        let native_acc = package.NativeAccumulation()
+        if (manifest.dependencies.size() > 0) {
+            let base = BasePackageManager(this.root_path)
+            let visited = hashMap.HashMap<str.Str, bool>()
+
+            let deps = manifest.dependencies.keys()
+            for (let j = 0; j < deps.length; j += 1) {
+                let dep_name = deps[j]
+                if (visited.contains(dep_name)) {
+                    continue
+                }
+                visited.put(dep_name, true)
+
+                // Find installed package via symlink or directory scan
+                let dep_link = this.root_path / dep_name
+                let dep_pkg_path : fs.Path = null
+                if (dep_link.exists()) {
+                    dep_pkg_path = dep_link
+                } else {
+                    let entries = this.root_path.listdir()
+                    for (let k = 0; k < entries.length; k += 1) {
+                        let entry_name = entries[k].filename()
+                        if (entry_name.startswith(dep_name + "@")) {
+                            dep_pkg_path = this.root_path / entry_name
+                            break
+                        }
+                    }
+                }
+
+                if (dep_pkg_path != null && dep_pkg_path.exists()) {
+                    base.accumulate_native_from_path(dep_pkg_path, native_acc, visited, platform)
+                }
+            }
+        }
+        // Root package's native config comes last (after all deps)
+        native_acc.add_platform_config(manifest.native.get_for_platform(platform))
+
         let target_names = build_manifest.targets.keys()
         for (let i = 0; i < target_names.length; i += 1) {
             let name = target_names[i]
             let target = build_manifest.targets[name]
-            
+
             console.print(str.format("Building target: {}...\n", name))
-            
+
             let output_path = bin_dir / target.filename
             let cache_path = project_cache / target.filename
 
             let cmd = str.format("{} -o {} ", hoshi_lang_exec, output_path.to_string())
-            
+
             if (target.type == "library") {
                 cmd += "--build-type library "
             }
-            
+
             if (target.flags.length > 0) {
                 cmd += target.flags + " "
             }
-            
+
+            // Add native compile flags from dependency tree
+            for (let j = 0; j < native_acc.compile_flags.length; j += 1) {
+                cmd += native_acc.compile_flags[j] + " "
+            }
+
             let defines_keys = target.defines.keys()
             for (let j = 0; j < defines_keys.length; j += 1) {
                 let d_key = defines_keys[j]
@@ -339,11 +513,21 @@ impl ProjectLocalPackageManager {
                     cmd += str.format("-D {} {} ", d_key, d_val)
                 }
             }
-            
+
+            // Add native linker flags as --linker-option (-L)
+            for (let j = 0; j < native_acc.link_flags.length; j += 1) {
+                cmd += str.format("--linker-option {} ", native_acc.link_flags[j])
+            }
+
+            // Add native library paths as --linker-option
+            for (let j = 0; j < native_acc.libraries.length; j += 1) {
+                cmd += str.format("--linker-option {} ", native_acc.libraries[j])
+            }
+
             // Use specified sourcefile
             cmd += str.format("\"{}\"", str.escape(target.sourcefile))
             cmd += str.format(" -C \"{}\"", str.escape(cache_path.to_string()))
-            
+
             console.print(str.format("Running command: {}\n", cmd))
             let exit_code = os.system(cmd)
             if (exit_code != 0) {
@@ -590,7 +774,8 @@ impl ProjectLocalPackageManager : instance.PackageManagementBackend {
             "Unknown",
             "",
             "MIT",
-            hashMap.HashMap<str.Str, str.Str>()
+            hashMap.HashMap<str.Str, str.Str>(),
+            package.NativeConfig()
         )
         let res = this.save_manifest(manifest)
         if (res.is_err()) {

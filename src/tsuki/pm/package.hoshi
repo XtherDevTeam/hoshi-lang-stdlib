@@ -4,6 +4,139 @@ use hashMap "hashMap"
 use vec "vec"
 use lang "builtin"
 
+struct NativePlatformConfig {
+    libraries: vec.Vec<str.Str>,
+    link_flags: vec.Vec<str.Str>,
+    compile_flags: vec.Vec<str.Str>,
+    constructor(),
+    constructor(libraries: vec.Vec<str.Str>, link_flags: vec.Vec<str.Str>, compile_flags: vec.Vec<str.Str>),
+    static from_json(obj: json.JSONValue) : NativePlatformConfig,
+    to_json() : json.JSONValue
+}
+
+impl NativePlatformConfig {
+    constructor() {
+        this.libraries = vec.Vec<str.Str>()
+        this.link_flags = vec.Vec<str.Str>()
+        this.compile_flags = vec.Vec<str.Str>()
+    },
+    constructor(libraries: vec.Vec<str.Str>, link_flags: vec.Vec<str.Str>, compile_flags: vec.Vec<str.Str>) {
+        this.libraries = libraries
+        this.link_flags = link_flags
+        this.compile_flags = compile_flags
+    },
+    static from_json(obj: json.JSONValue) : NativePlatformConfig {
+        let tree = dyn_cast<json.JSONDict>(obj)
+        let config = NativePlatformConfig()
+        if (tree == null) {
+            return config
+        }
+
+        if (tree.contains("libraries") && tree["libraries"] interfaceof json.JSONList) {
+            let libs = dyn_cast<json.JSONList>(tree["libraries"])
+            for (let i = 0; i < libs.length; i += 1) {
+                let lib = dyn_cast<str.Str>(libs[i])
+                if (lib != null) {
+                    config.libraries.push(lib)
+                }
+            }
+        }
+
+        if (tree.contains("link_flags") && tree["link_flags"] interfaceof json.JSONList) {
+            let flags = dyn_cast<json.JSONList>(tree["link_flags"])
+            for (let i = 0; i < flags.length; i += 1) {
+                let flag = dyn_cast<str.Str>(flags[i])
+                if (flag != null) {
+                    config.link_flags.push(flag)
+                }
+            }
+        }
+
+        if (tree.contains("compile_flags") && tree["compile_flags"] interfaceof json.JSONList) {
+            let flags = dyn_cast<json.JSONList>(tree["compile_flags"])
+            for (let i = 0; i < flags.length; i += 1) {
+                let flag = dyn_cast<str.Str>(flags[i])
+                if (flag != null) {
+                    config.compile_flags.push(flag)
+                }
+            }
+        }
+
+        return config
+    },
+    to_json() : json.JSONValue {
+        let libs_arr = json.JSONList()
+        for (let i = 0; i < this.libraries.length; i += 1) {
+            libs_arr.push(this.libraries[i])
+        }
+        let link_arr = json.JSONList()
+        for (let i = 0; i < this.link_flags.length; i += 1) {
+            link_arr.push(this.link_flags[i])
+        }
+        let compile_arr = json.JSONList()
+        for (let i = 0; i < this.compile_flags.length; i += 1) {
+            compile_arr.push(this.compile_flags[i])
+        }
+        return json.JSONDict()
+            .put("libraries", libs_arr)
+            .put("link_flags", link_arr)
+            .put("compile_flags", compile_arr)
+    }
+}
+
+struct NativeConfig {
+    darwin: NativePlatformConfig,
+    linux: NativePlatformConfig,
+    windows: NativePlatformConfig,
+    constructor(),
+    static from_json(obj: json.JSONValue) : NativeConfig,
+    to_json() : json.JSONValue,
+    get_for_platform(platform: str.Str) : NativePlatformConfig
+}
+
+impl NativeConfig {
+    constructor() {
+        this.darwin = NativePlatformConfig()
+        this.linux = NativePlatformConfig()
+        this.windows = NativePlatformConfig()
+    },
+    static from_json(obj: json.JSONValue) : NativeConfig {
+        let tree = dyn_cast<json.JSONDict>(obj)
+        let config = NativeConfig()
+        if (tree == null) {
+            return config
+        }
+
+        if (tree.contains("darwin")) {
+            config.darwin = NativePlatformConfig.from_json(tree["darwin"])
+        }
+        if (tree.contains("linux")) {
+            config.linux = NativePlatformConfig.from_json(tree["linux"])
+        }
+        if (tree.contains("windows")) {
+            config.windows = NativePlatformConfig.from_json(tree["windows"])
+        }
+
+        return config
+    },
+    to_json() : json.JSONValue {
+        return json.JSONDict()
+            .put("darwin", this.darwin.to_json())
+            .put("linux", this.linux.to_json())
+            .put("windows", this.windows.to_json())
+    },
+    get_for_platform(platform: str.Str) : NativePlatformConfig {
+        if (platform == "darwin") {
+            return this.darwin
+        } elif (platform == "linux") {
+            return this.linux
+        } elif (platform == "win32") {
+            return this.windows
+        }
+        return NativePlatformConfig()
+    }
+}
+
 struct PackageManifest {
     name: str.Str,
     version: str.Str,
@@ -11,29 +144,32 @@ struct PackageManifest {
     repository: str.Str,
     license: str.Str,
     dependencies: hashMap.HashMap<str.Str, str.Str>,
+    native: NativeConfig,
     constructor(),
-    constructor(name: str.Str, version: str.Str, author: str.Str, repository: str.Str, license: str.Str, dependencies: hashMap.HashMap<str.Str, str.Str>),
-    set_name(name: str.Str) : PackageManifest, 
+    constructor(name: str.Str, version: str.Str, author: str.Str, repository: str.Str, license: str.Str, dependencies: hashMap.HashMap<str.Str, str.Str>, native: NativeConfig),
+    set_name(name: str.Str) : PackageManifest,
     set_version(version: str.Str) : PackageManifest,
     set_author(author: str.Str) : PackageManifest,
     set_repository(repository: str.Str) : PackageManifest,
     set_license(license: str.Str) : PackageManifest,
     set_dependencies(dependencies: hashMap.HashMap<str.Str, str.Str>) : PackageManifest,
+    set_native(native: NativeConfig) : PackageManifest,
     static from_json(obj: json.JSONValue) : lang.Result<PackageManifest, str.Str>,
     to_json() : json.JSONValue
 }
 
 impl PackageManifest {
     constructor() {
-
+        this.native = NativeConfig()
     },
-    constructor(name: str.Str, version: str.Str, author: str.Str, repository: str.Str, license: str.Str, dependencies: hashMap.HashMap<str.Str, str.Str>) {
+    constructor(name: str.Str, version: str.Str, author: str.Str, repository: str.Str, license: str.Str, dependencies: hashMap.HashMap<str.Str, str.Str>, native: NativeConfig) {
         this.name = name
         this.version = version
         this.author = author
         this.repository = repository
         this.license = license
         this.dependencies = dependencies
+        this.native = native
     },
     set_name(name: str.Str) : PackageManifest {
         this.name = name
@@ -57,6 +193,10 @@ impl PackageManifest {
     },
     set_dependencies(dependencies: hashMap.HashMap<str.Str, str.Str>) : PackageManifest {
         this.dependencies = dependencies
+        return this
+    },
+    set_native(native: NativeConfig) : PackageManifest {
+        this.native = native
         return this
     },
     static from_json(obj: json.JSONValue) : lang.Result<PackageManifest, str.Str> {
@@ -91,7 +231,13 @@ impl PackageManifest {
             }
             dependencies_map.put(key, value_str)
         }
-        return lang.Result<PackageManifest, str.Str>.ok(PackageManifest(name_str, version_str, author_str, repository_str, license_str, dependencies_map))
+
+        let native_config = NativeConfig()
+        if (tree.contains("native")) {
+            native_config = NativeConfig.from_json(tree["native"])
+        }
+
+        return lang.Result<PackageManifest, str.Str>.ok(PackageManifest(name_str, version_str, author_str, repository_str, license_str, dependencies_map, native_config))
     },
     to_json() : json.JSONValue {
         let dependencies_obj = json.JSONDict()
@@ -108,6 +254,7 @@ impl PackageManifest {
             .put("author", this.author)
             .put("repository", this.repository)
             .put("license", this.license)
+            .put("native", this.native.to_json())
         return obj
     }
 }
@@ -412,5 +559,54 @@ impl BuildManifest {
             .put("minimum_hoshi_build", json.Numeric(this.minimum_hoshi_build))
             .put("targets", targets_obj)
         return obj
+    }
+}
+
+struct NativeAccumulation {
+    libraries: vec.Vec<str.Str>,
+    link_flags: vec.Vec<str.Str>,
+    compile_flags: vec.Vec<str.Str>,
+    seen_libraries: hashMap.HashMap<str.Str, bool>,
+    constructor(),
+    add_platform_config(config: NativePlatformConfig) : none,
+    merge(other: NativeAccumulation) : none
+}
+
+impl NativeAccumulation {
+    constructor() {
+        this.libraries = vec.Vec<str.Str>()
+        this.link_flags = vec.Vec<str.Str>()
+        this.compile_flags = vec.Vec<str.Str>()
+        this.seen_libraries = hashMap.HashMap<str.Str, bool>()
+    },
+    add_platform_config(config: NativePlatformConfig) : none {
+        for (let i = 0; i < config.libraries.length; i += 1) {
+            let lib = config.libraries[i]
+            if (this.seen_libraries.contains(lib) == false) {
+                this.seen_libraries.put(lib, true)
+                this.libraries.push(lib)
+            }
+        }
+        for (let i = 0; i < config.link_flags.length; i += 1) {
+            this.link_flags.push(config.link_flags[i])
+        }
+        for (let i = 0; i < config.compile_flags.length; i += 1) {
+            this.compile_flags.push(config.compile_flags[i])
+        }
+    },
+    merge(other: NativeAccumulation) : none {
+        for (let i = 0; i < other.libraries.length; i += 1) {
+            let lib = other.libraries[i]
+            if (this.seen_libraries.contains(lib) == false) {
+                this.seen_libraries.put(lib, true)
+                this.libraries.push(lib)
+            }
+        }
+        for (let i = 0; i < other.link_flags.length; i += 1) {
+            this.link_flags.push(other.link_flags[i])
+        }
+        for (let i = 0; i < other.compile_flags.length; i += 1) {
+            this.compile_flags.push(other.compile_flags[i])
+        }
     }
 }
