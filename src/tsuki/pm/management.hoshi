@@ -530,7 +530,7 @@ impl ProjectLocalPackageManager {
 
             // Add native library paths first
             for (let j = 0; j < native_acc.libraries.length; j += 1) {
-                cmd += str.format("--linker-option {} ", native_acc.libraries[j])
+                cmd += str.format("{} ", native_acc.libraries[j])
             }
 
             // Add native linker flags second
