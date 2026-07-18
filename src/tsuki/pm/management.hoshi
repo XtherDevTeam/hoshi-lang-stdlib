@@ -476,7 +476,21 @@ impl ProjectLocalPackageManager {
             }
         }
         // Root package's native config comes last (after all deps)
-        native_acc.add_platform_config(manifest.native.get_for_platform(platform))
+        // Resolve library paths relative to project root
+        let root_config = manifest.native.get_for_platform(platform)
+        let root_resolved = package.NativePlatformConfig()
+        let project_root = fs.Path.current_dir()
+        for (let j = 0; j < root_config.libraries.length; j += 1) {
+            let lib_path = project_root / root_config.libraries[j]
+            root_resolved.libraries.push(lib_path.to_string())
+        }
+        for (let j = 0; j < root_config.link_flags.length; j += 1) {
+            root_resolved.link_flags.push(root_config.link_flags[j])
+        }
+        for (let j = 0; j < root_config.compile_flags.length; j += 1) {
+            root_resolved.compile_flags.push(root_config.compile_flags[j])
+        }
+        native_acc.add_platform_config(root_resolved)
 
         let target_names = build_manifest.targets.keys()
         for (let i = 0; i < target_names.length; i += 1) {

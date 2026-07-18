@@ -10,7 +10,7 @@ use socket "socket"
 use uri "uri"
 use random "random"
 use console "console"
-use cookie "cookie"
+use cookie "net/cookie"
 use time "time"
 use json "json"
 
