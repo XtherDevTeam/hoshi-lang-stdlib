@@ -1,0 +1,120 @@
+use ui "libui/src/ui.hoshi"
+use dialogs "libui/src/components/dialogs.hoshi"
+use str "str"
+use device "miniaudio/src/device"
+use decoder "miniaudio/src/decoder"
+use native "miniaudio/src/native"
+use device_config "miniaudio/src/device_config"
+use console "console"
+
+func main() : int {
+    /* playback initialization */
+    let soundPath = str.Str("assets/test_audio.wav")
+
+    // Create decoder config (f32 output, stereo, 48000 Hz)
+    let decoderConfig = device_config.DecoderConfigData(
+        device_config.PlaybackFormat.F32,
+        2u,
+        48000u
+    )
+
+    // Open the audio file
+    let dec = decoder.Decoder(soundPath, decoderConfig)
+    if (dec.handle == 0) {
+        console.print("Failed to open audio file\n")
+        return 1
+    }
+    let [total_length, _] = dec.get_length_in_pcm_frames()
+    let current_cursor = 0
+
+    let slider = ui.Slider(0, total_length).on_change(func[dec] (v : int) : none {
+        this.dec.seek_to_pcm_frame(v)
+    })
+
+    // Create playback device matching the decoder's output format (F32, stereo, 48kHz)
+    let dev = device.Device(48000u, 2u, device_config.PlaybackFormat.F32)
+    if (dev.handle == 0) {
+        console.print("Failed to create playback device\n")
+        return 1
+    }
+
+    // Set up the data callback: read decoded PCM frames into the output buffer
+    dev.on_data(func[dec, dev] () : none {
+        let pOutput = native.maGetOutputBuffer()
+        let frameCount = native.maGetFrameCount()
+
+        let result = this.dec.read_pcm_frames(pOutput, frameCount)
+        if (result.is_err()) {
+            let _ = this.dev.stop()
+            return
+        }
+
+        let framesRead = result.unwrap()
+        if (framesRead < frameCount) {
+            let _ = this.dev.stop()
+        }
+    })
+
+    console.print("In memory of the very person who helped me out of despair in the darkest moments.\n")
+
+    let app = ui.App()
+    let err = app.init()
+    if (err != null) {
+        app.free_init_error(err)
+        return 1
+    }
+
+    let saved_text : str.Str = ""
+
+    let window = ui.Window("Dialog demo", 640, 300)
+    window.set_margined(1)
+    window.on_close(func[app] () : none {
+        console.print("Window closed\n")
+        this.app.quit()
+    })
+
+    let root = ui.VerticalBox()
+        .set_padded(1)
+        .append(ui.ImageViewFromPNG("assets/demo1.png", 600.0, 140.0), 1)
+        .append(ui.Label("Enter your name below."), 0)
+        .append(ui.Entry().on_change(func[saved_text] (v : str.Str) : none {
+            this.saved_text := v
+            console.print("Entry changed: ", this.saved_text, "\n")
+        }), 0)
+        .append(ui.Button("Okay").on_click(func[saved_text, window] () : none {
+            console.print("Button clicked\n")
+            console.print("Saved text: ", this.saved_text, "\n")
+            dialogs.msg_box(this.window, "Message", str.format("{} is an idiot!", this.saved_text))
+            if (this.saved_text == "Jerry Chou") {
+                dialogs.msg_box(this.window, "Message", "How could you even address yourself like this!")
+            }
+        }), 0)
+        .append(ui.Button("Play").on_click(func[saved_text, window, dev] () : none {
+            console.print("Playback started\n")
+            this.dev.start()
+        }), 0)
+        .append(ui.Button("Stop").on_click(func[saved_text, window, dev] () : none {
+            console.print("Playback stopped\n")
+            this.dev.stop()
+        }), 0)
+        .append(slider, 0)
+
+    let slider_timer = ui.Timer()
+    slider_timer.start(50, func[slider, dec, total_length] () : int {
+        console.print("Slider timer ticked\n")
+        let [cursor, _] = this.dec.get_cursor_in_pcm_frames()
+
+        this.slider.set_value(cursor)
+
+        if (cursor >= this.total_length) {
+            this.slider.set_value(0)
+            return 0
+        }
+        return 1
+    })
+
+    window.set_child(root).show()
+
+    app.main()
+    return 0
+}

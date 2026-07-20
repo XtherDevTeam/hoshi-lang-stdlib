@@ -1,0 +1,1 @@
+{"license":"MIT","repository":"","author":"Unknown","name":"test_libui","native":{"windows":{"link_flags":[],"libraries":[],"compile_flags":[]},"darwin":{"link_flags":[],"libraries":[],"compile_flags":[]},"linux":{"link_flags":[],"libraries":[],"compile_flags":[]}},"version":"1.0.0","dependencies":{"libui":">=1.0.0","miniaudio":">=1.0.0"}}

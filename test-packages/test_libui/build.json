@@ -1,0 +1,16 @@
+{
+    "targets": {
+        "binary": {
+            "flags": "--build-mode release",
+            "filename": "test_libui",
+            "arch": "universal",
+            "sourcefile": "index.hoshi",
+            "defines": {},
+            "visible": true,
+            "platform": "universal",
+            "type": "binary"
+        }
+    },
+    "minimum_hoshi_build": 53,
+    "minimum_pm_version": 1
+}
