@@ -27,6 +27,13 @@ func main() : int {
     let [total_length, _] = dec.get_length_in_pcm_frames()
     let current_cursor = 0
 
+    let app = ui.App()
+    let err = app.init()
+    if (err != null) {
+        app.free_init_error(err)
+        return 1
+    }
+
     let slider = ui.Slider(0, total_length).on_change(func[dec] (v : int) : none {
         this.dec.seek_to_pcm_frame(v)
     })
@@ -56,13 +63,6 @@ func main() : int {
     })
 
     console.print("In memory of the very person who helped me out of despair in the darkest moments.\n")
-
-    let app = ui.App()
-    let err = app.init()
-    if (err != null) {
-        app.free_init_error(err)
-        return 1
-    }
 
     let saved_text : str.Str = ""
 
